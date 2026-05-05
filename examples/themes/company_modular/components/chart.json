@@ -1,0 +1,14 @@
+{
+  "chart.line": {
+    "default": {
+      "accent": "{colors.primary}",
+      "line_width": 2.2
+    }
+  },
+  "chart.bar": {
+    "default": {
+      "accent": "{colors.accent}",
+      "bar_gap": 0.14
+    }
+  }
+}

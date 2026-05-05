@@ -1,0 +1,846 @@
+{
+  "schema_version": "0.2",
+  "title": "SlideForge Component Library Demo",
+  "theme": "theme.tech_blue",
+  "default_master": "tech_blue",
+  "masters": {
+    "tech_blue": {
+      "type": "master.tech_blue",
+      "chrome": {
+        "footer": {
+          "visible": true,
+          "text": "SlideForge - Agent-driven PPT UI Framework"
+        },
+        "page_number": {
+          "visible": true,
+          "format": "{current} / {total}"
+        },
+        "accent_bar": {
+          "visible": true
+        }
+      }
+    },
+    "blank": {
+      "type": "master.blank"
+    }
+  },
+  "pages": [
+    {
+      "type": "page.cover",
+      "layout": "cover",
+      "title": "SlideForge",
+      "subtitle": "Reusable PPT UI components for agent-generated decks",
+      "chrome": {
+        "logo": {
+          "visible": true,
+          "text": "SLIDEFORGE"
+        },
+        "page_number": {
+          "visible": false
+        }
+      },
+      "blocks": [
+        {
+          "id": "cover_summary",
+          "type": "basic.text",
+          "layout": {
+            "mode": "grid",
+            "col": 1,
+            "span": 7,
+            "row": 1,
+            "row_span": 2
+          },
+          "props": {
+            "bullets": [
+              "JSON DSL describes page semantics",
+              "Master controls shared PPT chrome",
+              "Page layouts allocate component regions",
+              "Components render only inside their own boxes"
+            ],
+            "size": 13
+          }
+        },
+        {
+          "id": "cover_pipeline",
+          "type": "basic.text",
+          "layout": {
+            "mode": "absolute",
+            "x": 8.55,
+            "y": 3.68,
+            "w": 3.35,
+            "h": 1.30
+          },
+          "style": {
+            "fill": "F8FAFF",
+            "border": "E4ECF7",
+            "accent": "7C3AED",
+            "shadow": true
+          },
+          "props": {
+            "bullets": [
+              "JSON DSL",
+              "Component Registry",
+              "Editable PPTX"
+            ],
+            "size": 10,
+            "color": "1E3A8A"
+          }
+        }
+      ]
+    },
+    {
+      "type": "page.section",
+      "layout": "section",
+      "title": "Page + Blocks Architecture",
+      "subtitle": "A page can contain many reusable components",
+      "metadata": {
+        "number": "01"
+      },
+      "chrome": {
+        "section": "01",
+        "footer": {
+          "visible": false
+        },
+        "page_number": {
+          "visible": false
+        }
+      },
+      "blocks": [
+        {
+          "type": "basic.text",
+          "layout": {
+            "mode": "grid",
+            "col": 1,
+            "span": 10,
+            "row": 1,
+            "row_span": 1
+          },
+          "style": {
+            "fill": "F8FAFF",
+            "border": "E4ECF7",
+            "shadow": true
+          },
+          "props": {
+            "text": "Slide/Page owns title, footer, page number and chrome. Layout owns space allocation. Component owns content rendering.",
+            "size": 13,
+            "color": "1E3A8A"
+          }
+        },
+        {
+          "type": "basic.text",
+          "layout": {
+            "mode": "grid",
+            "col": 1,
+            "span": 4,
+            "row": 2,
+            "row_span": 1
+          },
+          "style": {
+            "fill": "EEF5FF",
+            "border": "DBEAFE",
+            "align": "center",
+            "valign": "middle"
+          },
+          "props": {
+            "text": "Page owns chrome",
+            "size": 12,
+            "bold": true,
+            "align": "center",
+            "valign": "middle",
+            "color": "1E3A8A"
+          }
+        },
+        {
+          "type": "basic.text",
+          "layout": {
+            "mode": "grid",
+            "col": 5,
+            "span": 4,
+            "row": 2,
+            "row_span": 1
+          },
+          "style": {
+            "fill": "F3EEFF",
+            "border": "EDE9FE",
+            "align": "center",
+            "valign": "middle"
+          },
+          "props": {
+            "text": "Layout owns space",
+            "size": 12,
+            "bold": true,
+            "align": "center",
+            "valign": "middle",
+            "color": "7C3AED"
+          }
+        },
+        {
+          "type": "basic.text",
+          "layout": {
+            "mode": "grid",
+            "col": 9,
+            "span": 4,
+            "row": 2,
+            "row_span": 1
+          },
+          "style": {
+            "fill": "ECFDF5",
+            "border": "D1FAE5",
+            "align": "center",
+            "valign": "middle"
+          },
+          "props": {
+            "text": "Component owns content",
+            "size": 12,
+            "bold": true,
+            "align": "center",
+            "valign": "middle",
+            "color": "047857"
+          }
+        }
+      ]
+    },
+    {
+      "type": "page.standard",
+      "layout": {
+        "type": "layout.grid",
+        "columns": 12,
+        "rows": 6,
+        "gap": 0.2
+      },
+      "title": "Metrics, Trend And Progress",
+      "subtitle": "Independent data components rendered on one page",
+      "blocks": [
+        {
+          "id": "metrics",
+          "type": "data.metric_cards",
+          "layout": {
+            "mode": "grid",
+            "col": 1,
+            "span": 4,
+            "row": 1,
+            "row_span": 4
+          },
+          "props": {
+            "cards": [
+              {
+                "label": "Accuracy",
+                "value": "92.3%",
+                "delta": "+3.1%",
+                "compare": "vs previous"
+              },
+              {
+                "label": "AUC",
+                "value": "0.948",
+                "delta": "+0.026",
+                "compare": "validation set"
+              },
+              {
+                "label": "Pages",
+                "value": "9",
+                "delta": "+5",
+                "compare": "demo pages"
+              },
+              {
+                "label": "Blocks",
+                "value": "30",
+                "delta": "+22",
+                "compare": "component instances"
+              }
+            ]
+          }
+        },
+        {
+          "id": "trend",
+          "type": "chart.line",
+          "layout": {
+            "mode": "grid",
+            "col": 5,
+            "span": 8,
+            "row": 1,
+            "row_span": 4
+          },
+          "props": {
+            "categories": ["4/29", "5/6", "5/13", "5/20", "5/27", "6/3"],
+            "series": [
+              {
+                "name": "Coverage",
+                "values": [24, 36, 48, 56, 68, 82]
+              },
+              {
+                "name": "Stability",
+                "values": [30, 42, 46, 58, 72, 88],
+                "color": "7C3AED"
+              }
+            ]
+          }
+        },
+        {
+          "id": "progress",
+          "type": "data.progress",
+          "layout": {
+            "mode": "grid",
+            "col": 1,
+            "span": 12,
+            "row": 5,
+            "row_span": 2
+          },
+          "props": {
+            "items": [
+              {"label": "Schema validation", "value": 90},
+              {"label": "Block renderer", "value": 82, "color": "7C3AED"},
+              {"label": "Screenshot export", "value": 100},
+              {"label": "Visual review", "value": 68, "color": "10B981"}
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "type": "page.standard",
+      "title": "Chart Components",
+      "subtitle": "Line, bar, pie and donut expressions share theme tokens",
+      "layout": {
+        "type": "layout.grid",
+        "columns": 12,
+        "rows": 6,
+        "gap": 0.2
+      },
+      "blocks": [
+        {
+          "id": "bar",
+          "type": "chart.bar",
+          "layout": {
+            "mode": "grid",
+            "col": 1,
+            "span": 6,
+            "row": 1,
+            "row_span": 4
+          },
+          "props": {
+            "categories": ["API", "Layout", "Data", "Media", "Export"],
+            "series": [
+              {"name": "Done", "values": [86, 74, 92, 58, 88]},
+              {"name": "Next", "values": [20, 36, 18, 62, 28], "color": "7C3AED"}
+            ]
+          }
+        },
+        {
+          "id": "donut",
+          "type": "chart.donut",
+          "layout": {
+            "mode": "grid",
+            "col": 7,
+            "span": 3,
+            "row": 1,
+            "row_span": 4
+          },
+          "props": {
+            "labels": ["Data", "Narrative", "Chart", "Media"],
+            "values": [32, 26, 28, 14]
+          }
+        },
+        {
+          "id": "pie",
+          "type": "chart.pie",
+          "layout": {
+            "mode": "grid",
+            "col": 10,
+            "span": 3,
+            "row": 1,
+            "row_span": 4
+          },
+          "props": {
+            "labels": ["Core", "Renderer", "Docs"],
+            "values": [45, 35, 20]
+          }
+        },
+        {
+          "id": "chart_note",
+          "type": "basic.text",
+          "layout": {
+            "mode": "grid",
+            "col": 1,
+            "span": 12,
+            "row": 5,
+            "row_span": 2
+          },
+          "style": {
+            "fill": "F8FAFF",
+            "border": "E4ECF7",
+            "accent": "7C3AED"
+          },
+          "props": {
+            "bullets": [
+              "chart.line and chart.bar are editable shape charts",
+              "chart.pie and chart.donut use native editable PowerPoint charts",
+              "All chart blocks are selected by namespaced DSL types"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "type": "page.standard",
+      "title": "Icon Source Gallery",
+      "subtitle": "Frontend-style icon libraries are isolated on one dedicated demo page",
+      "layout": {
+        "type": "layout.grid",
+        "columns": 12,
+        "rows": 6,
+        "gap": 0.2
+      },
+      "blocks": [
+        {
+          "id": "icon_lucide",
+          "type": "media.icon",
+          "layout": {
+            "mode": "grid",
+            "col": 1,
+            "span": 4,
+            "row": 1,
+            "row_span": 2
+          },
+          "style": {
+            "fill": "F8FAFF",
+            "accent": "2563EB"
+          },
+          "props": {
+            "name": "lucide.sparkles",
+            "color": "primary",
+            "size": 128,
+            "stroke_width": 1.8,
+            "source": "Lucide via Iconify",
+            "description": "Resolve frontend icon names through the remote Iconify API."
+          }
+        },
+        {
+          "id": "icon_heroicons",
+          "type": "media.icon",
+          "layout": {
+            "mode": "grid",
+            "col": 5,
+            "span": 4,
+            "row": 1,
+            "row_span": 2
+          },
+          "style": {
+            "fill": "F3EEFF",
+            "accent": "7C3AED"
+          },
+          "props": {
+            "name": "heroicons.bolt",
+            "color": "accent",
+            "size": 128,
+            "rotate": 0,
+            "source": "Heroicons via Iconify",
+            "description": "Use the same media.icon API while swapping the source prefix."
+          }
+        },
+        {
+          "id": "icon_remix",
+          "type": "media.icon",
+          "layout": {
+            "mode": "grid",
+            "col": 9,
+            "span": 4,
+            "row": 1,
+            "row_span": 2
+          },
+          "style": {
+            "fill": "ECFDF5",
+            "accent": "10B981"
+          },
+          "props": {
+            "name": "remix.rocket-line",
+            "color": "success",
+            "size": 128,
+            "source": "Remix Icon",
+            "description": "Frontend icon families can be routed by provider and prefix."
+          }
+        },
+        {
+          "id": "icon_local",
+          "type": "media.icon",
+          "layout": {
+            "mode": "grid",
+            "col": 1,
+            "span": 4,
+            "row": 3,
+            "row_span": 2
+          },
+          "style": {
+            "fill": "FFF7ED",
+            "accent": "F59E0B"
+          },
+          "props": {
+            "name": "tabler.file-code",
+            "label": "SVG",
+            "color": "warning",
+            "size": 128,
+            "source": "Tabler Icons",
+            "description": "Any Iconify-compatible prefix can be used with the same DSL."
+          }
+        },
+        {
+          "id": "icon_brand",
+          "type": "media.icon",
+          "layout": {
+            "mode": "grid",
+            "col": 5,
+            "span": 4,
+            "row": 3,
+            "row_span": 2
+          },
+          "style": {
+            "fill": "EEF5FF",
+            "accent": "1E3A8A"
+          },
+          "props": {
+            "name": "fa.user",
+            "label": "SF",
+            "color": "primary_dark",
+            "size": 128,
+            "source": "Font Awesome",
+            "description": "Icon attributes are controlled directly from component props."
+          }
+        },
+        {
+          "id": "icon_fallback",
+          "type": "media.icon",
+          "layout": {
+            "mode": "grid",
+            "col": 9,
+            "span": 4,
+            "row": 3,
+            "row_span": 2
+          },
+          "style": {
+            "fill": "F8FAFF",
+            "accent": "64748B"
+          },
+          "props": {
+            "name": "bootstrap.chat-left-text",
+            "label": "TX",
+            "color": "text_secondary",
+            "size": 128,
+            "source": "Bootstrap Icons",
+            "description": "If the network is unavailable, the block falls back to centered text."
+          }
+        },
+        {
+          "id": "icon_note",
+          "type": "basic.text",
+          "layout": {
+            "mode": "grid",
+            "col": 1,
+            "span": 12,
+            "row": 5,
+            "row_span": 2
+          },
+          "style": {
+            "fill": "F8FAFF",
+            "border": "E4ECF7",
+            "accent": "2563EB"
+          },
+          "props": {
+            "bullets": [
+              "Only this page demonstrates media.icon; other demo pages avoid decorative icon usage",
+              "IconRegistry supports aliases, remote Iconify API, local SVG and custom providers",
+              "Remote SVG is rendered into transparent PNG before embedding in the PPTX"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "type": "page.standard",
+      "title": "Table And Timeline",
+      "subtitle": "Structured analysis and narrative status components",
+      "layout": {
+        "type": "layout.grid",
+        "columns": 12,
+        "rows": 6,
+        "gap": 0.2
+      },
+      "blocks": [
+        {
+          "id": "comparison",
+          "type": "table.comparison",
+          "layout": {
+            "mode": "grid",
+            "col": 1,
+            "span": 6,
+            "row": 1,
+            "row_span": 4
+          },
+          "props": {
+            "headers": ["Layer", "Responsibility", "Owner"],
+            "rows": [
+              ["Master", "Shared chrome", "Deck"],
+              ["Page", "Title and blocks", "Author"],
+              ["Layout", "Space allocation", "System"],
+              ["Component", "Content rendering", "Library"]
+            ],
+            "conclusion": "Clear ownership keeps the library scalable."
+          }
+        },
+        {
+          "id": "timeline",
+          "type": "narrative.timeline",
+          "layout": {
+            "mode": "grid",
+            "col": 7,
+            "span": 6,
+            "row": 1,
+            "row_span": 4
+          },
+          "props": {
+            "items": [
+              {"label": "Design", "date": "May", "description": "Freeze architecture", "status": "done"},
+              {"label": "Core", "date": "Jun", "description": "Page/block renderer", "status": "active"},
+              {"label": "Components", "date": "Jul", "description": "More families", "status": "normal"}
+            ]
+          }
+        },
+        {
+          "id": "table_note",
+          "type": "basic.text",
+          "layout": {
+            "mode": "grid",
+            "col": 1,
+            "span": 12,
+            "row": 5,
+            "row_span": 2
+          },
+          "props": {
+            "bullets": [
+              "Tables validate row/header length and emit diagnostics",
+              "Timeline nodes support done, active and normal status",
+              "Page chrome stays consistent across mixed component families"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "type": "page.standard",
+      "title": "Process Flow And Roadmap",
+      "subtitle": "Narrative components for project plans and delivery rhythm",
+      "layout": {
+        "type": "layout.grid",
+        "columns": 12,
+        "rows": 6,
+        "gap": 0.2
+      },
+      "blocks": [
+        {
+          "id": "process",
+          "type": "narrative.process_flow",
+          "layout": {
+            "mode": "grid",
+            "col": 1,
+            "span": 12,
+            "row": 1,
+            "row_span": 3
+          },
+          "props": {
+            "steps": [
+              {"title": "需求分析", "description": "Clarify goals and scope", "output": "brief"},
+              {"title": "方案设计", "description": "Map pages to components", "output": "DSL schema"},
+              {"title": "开发实现", "description": "Render editable PPTX", "output": "library"},
+              {"title": "测试验收", "description": "Review screenshots", "output": "demo"},
+              {"title": "上线迭代", "description": "Extend themes", "output": "release"}
+            ]
+          }
+        },
+        {
+          "id": "roadmap",
+          "type": "narrative.roadmap",
+          "layout": {
+            "mode": "grid",
+            "col": 1,
+            "span": 12,
+            "row": 4,
+            "row_span": 3
+          },
+          "props": {
+            "items": [
+              {"label": "Core API", "start": 0.05, "end": 0.42, "period": "Q2"},
+              {"label": "Charts", "start": 0.22, "end": 0.62, "period": "Q2-Q3"},
+              {"label": "Media", "start": 0.48, "end": 0.82, "period": "Q3"},
+              {"label": "Preview", "start": 0.72, "end": 0.96, "period": "Q4"}
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "type": "page.blank",
+      "layout": "blank",
+      "use_master": false,
+      "blocks": [
+        {
+          "type": "basic.text",
+          "layout": {
+            "mode": "absolute",
+            "x": 1.4,
+            "y": 1.3,
+            "w": 10.6,
+            "h": 1.0
+          },
+          "props": {
+            "text": "Blank Page",
+            "size": 40,
+            "bold": true,
+            "align": "center",
+            "color": "2563EB"
+          }
+        },
+        {
+          "type": "basic.text",
+          "layout": {
+            "mode": "absolute",
+            "x": 2.4,
+            "y": 2.6,
+            "w": 8.6,
+            "h": 0.6
+          },
+          "props": {
+            "text": "This page disables the master and controls its own layout.",
+            "size": 15,
+            "align": "center"
+          }
+        },
+        {
+          "type": "basic.text",
+          "layout": {
+            "mode": "absolute",
+            "x": 2.05,
+            "y": 4.20,
+            "w": 2.75,
+            "h": 0.78
+          },
+          "style": {
+            "fill": "EEF5FF",
+            "border": "DBEAFE",
+            "align": "center",
+            "valign": "middle"
+          },
+          "props": {
+            "text": "No master chrome",
+            "size": 12,
+            "bold": true,
+            "align": "center",
+            "valign": "middle",
+            "color": "1E3A8A"
+          }
+        },
+        {
+          "type": "basic.text",
+          "layout": {
+            "mode": "absolute",
+            "x": 5.30,
+            "y": 4.20,
+            "w": 2.75,
+            "h": 0.78
+          },
+          "style": {
+            "fill": "F3EEFF",
+            "border": "EDE9FE",
+            "align": "center",
+            "valign": "middle"
+          },
+          "props": {
+            "text": "Absolute control",
+            "size": 12,
+            "bold": true,
+            "align": "center",
+            "valign": "middle",
+            "color": "7C3AED"
+          }
+        },
+        {
+          "type": "basic.text",
+          "layout": {
+            "mode": "absolute",
+            "x": 8.55,
+            "y": 4.20,
+            "w": 2.75,
+            "h": 0.78
+          },
+          "style": {
+            "fill": "ECFDF5",
+            "border": "D1FAE5",
+            "align": "center",
+            "valign": "middle"
+          },
+          "props": {
+            "text": "Custom page design",
+            "size": 12,
+            "bold": true,
+            "align": "center",
+            "valign": "middle",
+            "color": "047857"
+          }
+        }
+      ]
+    },
+    {
+      "type": "page.qa",
+      "layout": "qa",
+      "title": "Q&A",
+      "subtitle": "SlideForge - Page + Blocks + Master",
+      "chrome": {
+        "footer": {
+          "visible": true,
+          "text": "Thank you"
+        },
+        "page_number": {
+          "visible": false
+        }
+      },
+      "blocks": [
+        {
+          "type": "basic.text",
+          "layout": {
+            "mode": "grid",
+            "col": 3,
+            "span": 8,
+            "row": 2,
+            "row_span": 1
+          },
+          "style": {
+            "fill": "F8FAFF",
+            "border": "E4ECF7"
+          },
+          "props": {
+            "text": "Components are now true reusable content units.",
+            "align": "center",
+            "valign": "middle",
+            "size": 16,
+            "bold": true,
+            "color": "1E3A8A"
+          }
+        },
+        {
+          "type": "basic.text",
+          "layout": {
+            "mode": "grid",
+            "col": 4,
+            "span": 6,
+            "row": 3,
+            "row_span": 1
+          },
+          "props": {
+            "text": "Welcome to discuss component design, theme variants and agent rendering pipelines.",
+            "align": "center",
+            "valign": "middle",
+            "size": 12,
+            "color": "5B6B86"
+          }
+        }
+      ]
+    }
+  ]
+}

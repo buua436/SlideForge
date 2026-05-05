@@ -1,0 +1,20 @@
+{
+  "data.metric_cards": {
+    "default": {
+      "fill": "{colors.surface_white}",
+      "border": "{colors.border}",
+      "accent": "{colors.primary}"
+    },
+    "hero": {
+      "fill": "{colors.primary_soft}",
+      "accent": "{colors.primary}"
+    }
+  },
+  "data.progress": {
+    "default": {
+      "fill": "{colors.surface_white}",
+      "border": "{colors.border}",
+      "accent": "{colors.primary}"
+    }
+  }
+}

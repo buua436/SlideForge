@@ -1,0 +1,49 @@
+{
+  "name": "company_blue",
+  "extends": "default_blue",
+  "tokens": {
+    "colors": {
+      "primary": "0052CC",
+      "primary_dark": "0747A6",
+      "primary_soft": "EAF2FF",
+      "accent": "6554C0",
+      "accent_soft": "F3F0FF",
+      "text_primary": "172B4D",
+      "text_secondary": "42526E",
+      "surface": "F7F9FC",
+      "border": "DFE1E6"
+    },
+    "fonts": {
+      "family": "Microsoft YaHei",
+      "title_size": 34,
+      "h1_size": 27,
+      "body_size": 11
+    },
+    "spacing": {
+      "page_margin": 0.55,
+      "content_top": 1.55,
+      "gutter": 0.22
+    }
+  },
+  "components": {
+    "data.metric_cards": {
+      "default": {
+        "fill": "{colors.surface_white}",
+        "border": "{colors.border}",
+        "accent": "{colors.primary}"
+      },
+      "hero": {
+        "fill": "{colors.primary_soft}",
+        "border": "{colors.primary_tint}",
+        "accent": "{colors.accent}"
+      }
+    },
+    "chart.line": {
+      "default": {
+        "accent": "{colors.primary}",
+        "grid_color": "{colors.border_light}",
+        "line_width": 2
+      }
+    }
+  }
+}

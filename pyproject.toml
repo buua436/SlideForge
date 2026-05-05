@@ -1,0 +1,30 @@
+[project]
+name = "slideforge"
+version = "0.1.0"
+description = "Reusable PPT UI component library for agent-generated decks."
+requires-python = ">=3.10"
+dependencies = [
+    "Pillow>=10.0.0",
+    "python-pptx>=1.0.2",
+    "pywin32>=306; sys_platform == 'win32'",
+    "resvg-py>=0.3.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=7.4.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["ppt_ui"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"ppt_ui/themes" = "ppt_ui/themes"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

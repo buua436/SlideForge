@@ -1,0 +1,9 @@
+{
+  "name": "company_modular",
+  "extends": "default_blue",
+  "tokens": "./tokens.json",
+  "components": [
+    "./components/data.json",
+    "./components/chart.json"
+  ]
+}
