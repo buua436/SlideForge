@@ -198,12 +198,13 @@ Built-in theme definitions are JSON files under `ppt_ui/themes/`. The Python reg
 | Theme | Intent |
 | --- | --- |
 | `theme.tech_blue` | Default blue-purple technical deck. |
-| `theme.academic_clean` | Formal thesis, paper, and experiment-report style. |
-| `theme.business_navy` | Navy and restrained gold business presentation style. |
-| `theme.data_dashboard` | Metric-heavy report and dashboard style with richer chart palette. |
-| `theme.medical_teal` | Clean teal style for medical, biological, and scientific decks. |
-| `theme.dark_tech` | Dark launch/demo style with cyan-purple accents. |
-| `theme.claude_warm` | Warm paper-like narrative style. |
+| `theme.glassmorphism` | Gradient background, translucent cards, and soft glass-like surfaces. |
+| `theme.claude` | Warm paper-like narrative style with serif typography and restrained ochre accents. |
+| `theme.glitch_art` | Dark experimental style with scanline pattern and neon cyan/magenta contrast. |
+| `theme.paper_cut` | Layered paper-cut style with stronger shadows and editorial cards. |
+| `theme.neon_cyberpunk` | Dark grid background, neon top-border cards, and HUD-style typography. |
+| `theme.apple` | Minimal light-gray product style with large radius and quiet surfaces. |
+| `theme.google` | Google-like blue/red/yellow/green palette and Material-style restraint. |
 
 ### 5.3 MasterRegistry
 

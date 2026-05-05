@@ -8,3 +8,10 @@ __pycache__/
 # Generated decks
 examples/*.pptx
 examples/demo_screenshots/
+examples/demo_showcase.png
+examples/theme_demos/
+
+# Local agent config and ad-hoc generated outputs
+.claude/
+output/
+examples/demos/

@@ -1,0 +1,93 @@
+{
+  "name": "apple",
+  "metadata": {
+    "display_name": "Apple",
+    "suitable_for": ["Product launches", "Keynotes", "Premium brand presentations"],
+    "visual_features": ["Shadow-only depth", "No borders", "Extra-large radius", "Ultra-minimal", "Bold display typography"]
+  },
+  "background": "#F5F5F7",
+  "surface": "#FBFBFD",
+  "surface_alt": "#F0F0F2",
+  "surface_white": "#FFFFFF",
+  "primary": "#0071E3",
+  "primary_dark": "#0051A8",
+  "primary_soft": "#F0F5FF",
+  "primary_tint": "#D1E3FF",
+  "accent": "#FF375F",
+  "accent_soft": "#FFF0F3",
+  "accent_tint": "#FFD0D9",
+  "text_primary": "#1D1D1F",
+  "text_secondary": "#86868B",
+  "text_muted": "#AEAEB2",
+  "border": "#FFFFFF",
+  "border_light": "#FFFFFF",
+  "font_family": "SF Pro Display",
+  "title_font_family": "SF Pro Display",
+  "title_size": 44,
+  "subtitle_size": 18,
+  "h1_size": 32,
+  "h2_size": 20,
+  "body_size": 12,
+  "caption_size": 10,
+  "tiny_size": 8,
+  "display_size": 62,
+  "page_margin": 0.70,
+  "content_gap": 0.26,
+  "card_radius": 0.16,
+  "card_shadow": false,
+  "chart_palette": ["#0071E3", "#FF375F", "#30D158", "#FF9F0A", "#BF5AF2", "#64D2FF"],
+  "shadow": {
+    "blur_radius": 0.12,
+    "distance": 0.05,
+    "opacity": 0.14,
+    "direction": 5400000
+  },
+  "decorations": {
+    "accent_bar_width": 0.0,
+    "footer_line_width": 0.0,
+    "footer_line_lengths": [0.0],
+    "card_radius": 0.16
+  },
+  "component_styles": {
+    "card.default": {
+      "fill": "FFFFFF",
+      "border": "FFFFFF",
+      "line_width": 0.0,
+      "opacity": 1.0
+    },
+    "metric_card.default": {
+      "fill": "FFFFFF",
+      "border": "FFFFFF",
+      "accent": "0071E3",
+      "line_width": 0.0
+    },
+    "chart.line.default": {
+      "fill": "FFFFFF",
+      "border": "FFFFFF",
+      "line_width": 2.5
+    },
+    "chart.bar.default": {
+      "fill": "FFFFFF",
+      "border": "FFFFFF"
+    },
+    "table.comparison": {
+      "fill": "FFFFFF",
+      "border": "F0F0F2",
+      "accent": "F5F5F7",
+      "title": "1D1D1F",
+      "body": "1D1D1F"
+    },
+    "narrative.timeline.default": {
+      "fill": "FFFFFF",
+      "border": "FFFFFF",
+      "accent": "0071E3"
+    },
+    "conclusion.hero": {
+      "fill": "1D1D1F",
+      "border": "1D1D1F",
+      "accent": "0071E3",
+      "title": "FFFFFF",
+      "body": "F5F5F7"
+    }
+  }
+}

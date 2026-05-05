@@ -13,12 +13,13 @@ TOKEN_REF_RE = re.compile(r"\{([A-Za-z0-9_.]+)\}")
 STYLE_FIELDS = {"fill", "border", "accent", "title", "body"}
 _BUILTIN_THEME_NAMES = [
     "tech_blue",
-    "academic_clean",
-    "business_navy",
-    "data_dashboard",
-    "medical_teal",
-    "dark_tech",
-    "claude_warm",
+    "glassmorphism",
+    "claude",
+    "glitch_art",
+    "paper_cut",
+    "neon_cyberpunk",
+    "apple",
+    "google",
 ]
 TOKEN_ALIASES = {
     "colors": {
@@ -27,6 +28,10 @@ TOKEN_ALIASES = {
     },
     "fonts": {
         "font_family": "family",
+        "title_font_family": "title_font",
+        "mono_font_family": "mono_font",
+        "latin_font_family": "latin_font",
+        "caption_font_family": "caption_font",
     },
     "spacing": {
         "content_gap": "gutter",
@@ -92,6 +97,10 @@ class ColorTokens:
 @dataclass(frozen=True)
 class FontTokens:
     family: str = "Microsoft YaHei"
+    title_font: str = ""
+    mono_font: str = ""
+    latin_font: str = ""
+    caption_font: str = ""
     title_size: int = 36
     subtitle_size: int = 15
     h1_size: int = 28
@@ -133,6 +142,22 @@ class ShadowTokens:
     light_offset_y: float = 0.014
     card_offset_x: float = 0.012
     card_offset_y: float = 0.018
+    blur_radius: float = 0.0
+    distance: float = 0.0
+    opacity: float = 0.4
+    direction: int = 5400000
+
+
+@dataclass(frozen=True)
+class GradientStop:
+    color: str
+    position: int = 0
+
+
+@dataclass(frozen=True)
+class GradientConfig:
+    stops: tuple[GradientStop, ...] = ()
+    angle: int = 5400000
 
 
 @dataclass(frozen=True)
@@ -142,6 +167,10 @@ class ComponentStyle:
     accent: str
     title: str
     body: str
+    opacity: float = 1.0
+    dash_style: int | None = None
+    line_width: float | None = None
+    shadow_blur: float | None = None
 
 
 def default_component_styles() -> dict[str, ComponentStyle]:
@@ -169,6 +198,9 @@ class Theme:
     component_defaults: dict[str, dict[str, Any]] = field(default_factory=dict)
     chart_palette: list[str] = field(default_factory=lambda: ["2563EB", "7C3AED", "06B6D4", "10B981", "F59E0B", "EF4444"])
     card_shadow: bool = True
+    gradient: GradientConfig = field(default_factory=GradientConfig)
+    background_pattern: str = ""
+    decorations: dict[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -313,6 +345,10 @@ class ThemeLoader:
         if not isinstance(chart_palette, list):
             chart_palette = parent.chart_palette
 
+        gradient = _load_gradient(data.get("gradient"), parent.gradient)
+        background_pattern = str(data.get("background_pattern", parent.background_pattern))
+        decorations = _deep_merge(parent.decorations, dict(data.get("decorations", {})))
+
         theme = Theme(
             name=str(data.get("name", parent.name)),
             slide_width=float(data.get("slide_width", parent.slide_width)),
@@ -326,6 +362,9 @@ class ThemeLoader:
             component_defaults=deepcopy(parent.component_defaults),
             chart_palette=[_strip_hex_hash(str(color)) for color in chart_palette],
             card_shadow=bool(data.get("card_shadow", parent.card_shadow)),
+            gradient=gradient,
+            background_pattern=background_pattern,
+            decorations=decorations,
             metadata=_deep_merge(parent.metadata, dict(data.get("metadata", {}))),
         )
 
@@ -348,6 +387,9 @@ class ThemeLoader:
             component_defaults=component_defaults,
             chart_palette=theme.chart_palette,
             card_shadow=theme.card_shadow,
+            gradient=theme.gradient,
+            background_pattern=theme.background_pattern,
+            decorations=theme.decorations,
             metadata=theme.metadata,
         )
 
@@ -626,4 +668,24 @@ def _component_style_from_mapping(data: Mapping[str, Any], base: ComponentStyle)
         accent=str(data.get("accent", base.accent)),
         title=str(data.get("title", base.title)),
         body=str(data.get("body", base.body)),
+        opacity=float(data.get("opacity", base.opacity)),
+        dash_style=int(data["dash_style"]) if data.get("dash_style") is not None else base.dash_style,
+        line_width=float(data["line_width"]) if data.get("line_width") is not None else base.line_width,
+        shadow_blur=float(data["shadow_blur"]) if data.get("shadow_blur") is not None else base.shadow_blur,
     )
+
+
+def _load_gradient(data: object, parent: GradientConfig) -> GradientConfig:
+    if data is None:
+        return parent
+    if isinstance(data, Mapping):
+        stops = []
+        for item in data.get("stops", []):
+            if isinstance(item, Mapping):
+                stops.append(GradientStop(
+                    color=_strip_hex_hash(str(item.get("color", "000000"))),
+                    position=int(item.get("position", 0)),
+                ))
+        angle = int(data.get("angle", parent.angle))
+        return GradientConfig(stops=tuple(stops) if stops else parent.stops, angle=angle)
+    return parent

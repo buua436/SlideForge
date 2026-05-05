@@ -9,8 +9,10 @@ from pptx import Presentation
 from pptx.dml.color import RGBColor
 from pptx.enum.shapes import MSO_SHAPE
 from pptx.enum.text import MSO_ANCHOR, MSO_AUTO_SIZE, PP_ALIGN
+from pptx.oxml.ns import qn
 from pptx.util import Inches, Pt
 from PIL import Image
+import lxml.etree as ET
 
 from ppt_ui.core.component import RenderContext
 from ppt_ui.core.layout import Box, layout_from_spec, resolve_block_box
@@ -20,6 +22,33 @@ from ppt_ui.icons.provider import IconRegistry, IconRequest, default_icon_regist
 def _rgb(value: str) -> RGBColor:
     value = value.strip().lstrip("#")
     return RGBColor(int(value[0:2], 16), int(value[2:4], 16), int(value[4:6], 16))
+
+
+def _set_shape_opacity(shape: object, opacity: float) -> None:
+    sp = shape._element
+    spPr = sp.spPr
+    solidFill = spPr.find('.//' + qn('a:solidFill'))
+    if solidFill is not None:
+        srgb = solidFill.find(qn('a:srgbClr'))
+        if srgb is not None:
+            alpha = ET.SubElement(srgb, qn('a:alpha'))
+            alpha.set('val', str(int(opacity * 100000)))
+
+
+def _add_native_shadow(shape: object, blur_radius: int, distance: int, direction: int = 5400000, opacity: float = 0.4) -> None:
+    spPr = shape._element.spPr
+    effectLst = spPr.find(qn('a:effectLst'))
+    if effectLst is None:
+        effectLst = ET.SubElement(spPr, qn('a:effectLst'))
+    outerShdw = ET.SubElement(effectLst, qn('a:outerShdw'))
+    outerShdw.set('blurRad', str(blur_radius))
+    outerShdw.set('dist', str(distance))
+    outerShdw.set('dir', str(direction))
+    outerShdw.set('algn', 'tl')
+    srgbClr = ET.SubElement(outerShdw, qn('a:srgbClr'))
+    srgbClr.set('val', '000000')
+    alpha = ET.SubElement(srgbClr, qn('a:alpha'))
+    alpha.set('val', str(int(opacity * 100000)))
 
 
 class PptxRenderer:
@@ -73,9 +102,40 @@ class PptxRenderer:
         return _rgb(value)
 
     def background(self, slide: object) -> None:
-        fill = slide.background.fill
-        fill.solid()
-        fill.fore_color.rgb = _rgb(self.theme.colors.background)
+        gradient = getattr(self.theme, "gradient", None)
+        if gradient and gradient.stops:
+            fill = slide.background.fill
+            fill.gradient()
+            fill.gradient_stops[0].color.rgb = _rgb(gradient.stops[0].color)
+            fill.gradient_stops[1].color.rgb = _rgb(gradient.stops[-1].color)
+            for i, stop in enumerate(gradient.stops):
+                if i < len(fill.gradient_stops):
+                    fill.gradient_stops[i].color.rgb = _rgb(stop.color)
+                    fill.gradient_stops[i].position = stop.position / 100
+            gf = fill._fill._gradFill
+            lin = gf.find(qn('a:lin'))
+            if lin is not None:
+                lin.set('ang', str(gradient.angle))
+                lin.set('scaled', '1')
+        else:
+            fill = slide.background.fill
+            fill.solid()
+            fill.fore_color.rgb = _rgb(self.theme.colors.background)
+        bg_pattern = getattr(self.theme, "background_pattern", "")
+        if bg_pattern:
+            self._apply_background_pattern(slide, bg_pattern)
+
+    def _apply_background_pattern(self, slide: object, pattern: str) -> None:
+        w = self.theme.slide_width
+        h = self.theme.slide_height
+        if pattern == "scanlines":
+            for y_pos in [i * 0.15 for i in range(int(h / 0.15))]:
+                self.rect(slide, Box(0, y_pos, w, 0.02), "000000", opacity=0.06)
+        elif pattern == "grid":
+            for x_pos in [i * 0.5 for i in range(int(w / 0.5) + 1)]:
+                self.line(slide, x_pos, 0, x_pos, h, color="FFFFFF", width=0.3)
+            for y_pos in [i * 0.5 for i in range(int(h / 0.5) + 1)]:
+                self.line(slide, 0, y_pos, w, y_pos, color="FFFFFF", width=0.3)
 
     def rect(
         self,
@@ -84,17 +144,23 @@ class PptxRenderer:
         fill: str,
         line: str | None = None,
         *,
-        rounded: bool = False,
+        rounded: bool | float = False,
         line_width: float = 0.55,
+        opacity: float = 1.0,
+        dash_style: int | None = None,
     ) -> object:
         if box.w <= 0 or box.h <= 0:
             return None
-        shape_type = MSO_SHAPE.ROUNDED_RECTANGLE if rounded else MSO_SHAPE.RECTANGLE
+        use_rounded = bool(rounded)
+        shape_type = MSO_SHAPE.ROUNDED_RECTANGLE if use_rounded else MSO_SHAPE.RECTANGLE
         shape = slide.shapes.add_shape(shape_type, Inches(box.x), Inches(box.y), Inches(box.w), Inches(box.h))
         shape.fill.solid()
         shape.fill.fore_color.rgb = _rgb(fill)
-        if rounded and len(shape.adjustments):
-            shape.adjustments[0] = self.theme.radius_tokens.md
+        if use_rounded and len(shape.adjustments):
+            radius = rounded if isinstance(rounded, (int, float)) and rounded is not True else self.theme.radius_tokens.md
+            shape.adjustments[0] = radius
+        if opacity < 1.0:
+            _set_shape_opacity(shape, opacity)
         try:
             shape.shadow.inherit = False
         except AttributeError:
@@ -104,6 +170,8 @@ class PptxRenderer:
         else:
             shape.line.color.rgb = _rgb(line)
             shape.line.width = Pt(line_width)
+            if dash_style is not None:
+                shape.line.dash_style = dash_style
         return shape
 
     def line(
@@ -127,12 +195,14 @@ class PptxRenderer:
         shape.line.width = Pt(width)
         return shape
 
-    def circle(self, slide: object, box: Box, fill: str, line: str | None = None, line_width: float = 0.55) -> object:
+    def circle(self, slide: object, box: Box, fill: str, line: str | None = None, line_width: float = 0.55, opacity: float = 1.0) -> object:
         if box.w <= 0 or box.h <= 0:
             return None
         shape = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(box.x), Inches(box.y), Inches(box.w), Inches(box.h))
         shape.fill.solid()
         shape.fill.fore_color.rgb = _rgb(fill)
+        if opacity < 1.0:
+            _set_shape_opacity(shape, opacity)
         try:
             shape.shadow.inherit = False
         except AttributeError:
@@ -205,6 +275,8 @@ class PptxRenderer:
         bold: bool = False,
         align: str = "left",
         valign: str = "top",
+        font: str | None = None,
+        line_spacing: int | None = None,
     ) -> object:
         if not text or box.w <= 0 or box.h <= 0:
             return None
@@ -224,9 +296,25 @@ class PptxRenderer:
         }.get(valign, MSO_ANCHOR.TOP)
         p = frame.paragraphs[0]
         p.alignment = {"left": PP_ALIGN.LEFT, "center": PP_ALIGN.CENTER, "right": PP_ALIGN.RIGHT}.get(align, PP_ALIGN.LEFT)
+        if line_spacing is not None:
+            pPr = p._pPr
+            if pPr is None:
+                pPr = ET.SubElement(p._p, qn('a:pPr'))
+            lnSpc = ET.SubElement(pPr, qn('a:lnSpc'))
+            spcPct = ET.SubElement(lnSpc, qn('a:spcPct'))
+            spcPct.set('val', str(line_spacing))
         run = p.add_run()
         run.text = text
-        run.font.name = self.theme.fonts.family
+        latin = font or getattr(self.theme.fonts, "latin_font", "") or self.theme.fonts.family
+        ea = self.theme.fonts.family
+        run.font.name = latin
+        rPr = run._r.get_or_add_rPr()
+        ea_elem = rPr.find(qn('a:ea'))
+        if ea_elem is not None:
+            ea_elem.set('typeface', ea)
+        else:
+            ea_elem = ET.SubElement(rPr, qn('a:ea'))
+            ea_elem.set('typeface', ea)
         run.font.size = Pt(size or self.theme.fonts.body_size)
         run.font.bold = bold
         run.font.color.rgb = _rgb(color or self.theme.colors.text_primary)
@@ -270,16 +358,19 @@ class PptxRenderer:
         return Box(margin, top, self.theme.slide_width - margin * 2, self.theme.slide_height - top - 0.70)
 
     def add_accent_bar(self, slide: object, *, x: float | None = None, y: float | None = None, h: float = 0.62) -> None:
+        deco = getattr(self.theme, "decorations", {})
+        bar_w = deco.get("accent_bar_width", 0.075)
         x = 0.30 if x is None else x
         y = self.theme.spacing.title_top - 0.06 if y is None else y
-        self.rect(slide, Box(x, y, 0.075, h), self.theme.colors.primary, rounded=True)
-        self.rect(slide, Box(x, y + h * 0.52, 0.075, h * 0.48), self.theme.colors.accent, rounded=True)
+        self.rect(slide, Box(x, y, bar_w, h), self.theme.colors.primary, rounded=True)
+        self.rect(slide, Box(x, y + h * 0.52, bar_w, h * 0.48), self.theme.colors.accent, rounded=True)
 
     def add_slide_title(self, slide: object, title: str, subtitle: str = "", section: str | None = None) -> Box:
         margin = self.theme.spacing.page_margin
         title_y = self.theme.spacing.title_top
+        title_font = getattr(self.theme.fonts, "title_font", "") or None
         self.add_accent_bar(slide)
-        self.text(slide, Box(margin, title_y - 0.03, 9.2, 0.42), title, size=self.theme.fonts.h1_size, bold=True)
+        self.text(slide, Box(margin, title_y - 0.03, 9.2, 0.42), title, size=self.theme.fonts.h1_size, bold=True, font=title_font)
         if subtitle:
             self.text(slide, Box(margin, title_y + 0.45, 9.4, 0.27), subtitle, size=self.theme.fonts.subtitle_size, color=self.theme.colors.text_secondary)
         if section:
@@ -287,10 +378,14 @@ class PptxRenderer:
         return self.content_box()
 
     def add_footer(self, slide: object, text: str = "SlideForge - Agent-driven PPT UI Framework") -> None:
+        deco = getattr(self.theme, "decorations", {})
         margin = self.theme.spacing.page_margin
         y = self.theme.spacing.footer_y
-        self.rect(slide, Box(margin, y, 1.25, 0.025), self.theme.colors.primary, rounded=True)
-        self.rect(slide, Box(margin + 1.25, y, 0.72, 0.025), self.theme.colors.accent, rounded=True)
+        line_w = deco.get("footer_line_width", 0.025)
+        lengths = deco.get("footer_line_lengths", [1.25, 0.72])
+        self.rect(slide, Box(margin, y, lengths[0], line_w), self.theme.colors.primary, rounded=True)
+        if len(lengths) > 1:
+            self.rect(slide, Box(margin + lengths[0], y, lengths[1], line_w), self.theme.colors.accent, rounded=True)
         self.text(slide, Box(margin, y + 0.09, 5.2, 0.18), text, size=self.theme.fonts.tiny_size, color=self.theme.colors.text_tertiary)
 
     def add_card(
@@ -303,16 +398,47 @@ class PptxRenderer:
         shadow: bool = True,
     ) -> object:
         style = self.theme.component_style("card")
+        line_w = style.line_width if style.line_width is not None else 0.45
+        rounded_val = True
+        deco = getattr(self.theme, "decorations", {})
+        if "card_radius" in deco:
+            rounded_val = deco["card_radius"]
+
+        shadow_cfg = self.theme.shadow
         if shadow and self.theme.card_shadow:
-            shadow = self.theme.shadow
-            self.rect(
-                slide,
-                Box(box.x + shadow.card_offset_x, box.y + shadow.card_offset_y, box.w, box.h),
-                self.theme.colors.shadow_card,
-                line=None,
-                rounded=True,
+            if shadow_cfg.blur_radius <= 0:
+                self.rect(
+                    slide,
+                    Box(box.x + shadow_cfg.card_offset_x, box.y + shadow_cfg.card_offset_y, box.w, box.h),
+                    self.theme.colors.shadow_card,
+                    line=None,
+                    rounded=rounded_val,
+                )
+
+        shape = self.rect(
+            slide, box,
+            fill or style.fill,
+            line or style.border,
+            rounded=rounded_val,
+            line_width=line_w,
+            opacity=style.opacity,
+            dash_style=style.dash_style,
+        )
+
+        if shadow and self.theme.card_shadow and shadow_cfg.blur_radius > 0:
+            _add_native_shadow(
+                shape,
+                blur_radius=int(shadow_cfg.blur_radius * 914400),
+                distance=int(shadow_cfg.distance * 914400),
+                direction=shadow_cfg.direction,
+                opacity=shadow_cfg.opacity,
             )
-        return self.rect(slide, box, fill or style.fill, line or style.border, rounded=True, line_width=0.45)
+
+        top_border = deco.get("card_top_border", "")
+        if top_border:
+            self.rect(slide, Box(box.x, box.y, box.w, 0.04), top_border, rounded=False)
+
+        return shape
 
     def add_metric_card(
         self,
@@ -339,12 +465,13 @@ class PptxRenderer:
             self.text(slide, icon_box.inset(0.03, 0.02), icon, size=9, color=accent_color, bold=True, align="center", valign="middle")
         compact = box.h < 1.40
         label_size = max(8, self.theme.fonts.caption_size - (1 if compact else 0))
+        caption_font = getattr(self.theme.fonts, "caption_font", "") or None
         value_size = 19 if compact else 23
         value_y = 0.34 if compact else 0.42
         delta_y = 0.78 if compact else 0.88
         note_y = 0.98 if compact else 1.12
 
-        self.text(slide, Box(inner.x, inner.y + 0.02, inner.w - 0.45, 0.22), label, size=label_size, color=self.theme.colors.text_secondary, bold=True)
+        self.text(slide, Box(inner.x, inner.y + 0.02, inner.w - 0.45, 0.22), label, size=label_size, color=self.theme.colors.text_secondary, bold=True, font=caption_font)
         self.text(slide, Box(inner.x, inner.y + value_y, inner.w, 0.38), value, size=value_size, color=self.theme.colors.text_primary, bold=True)
         if delta:
             delta_color = self.theme.colors.success if delta.startswith("+") else self.theme.colors.warning
@@ -355,8 +482,9 @@ class PptxRenderer:
             self.text(slide, Box(inner.x, min(inner.y + note_y, inner.y + inner.h - 0.20), inner.w, 0.18), note, size=self.theme.fonts.tiny_size, color=self.theme.colors.text_tertiary)
 
     def add_section_label(self, slide: object, label: str, box: Box) -> None:
+        caption_font = getattr(self.theme.fonts, "caption_font", "") or None
         self.rect(slide, box, self.theme.colors.primary, rounded=True)
-        self.text(slide, box.inset(0.04, 0.0), label, size=self.theme.fonts.caption_size, color="FFFFFF", bold=True, align="center", valign="middle")
+        self.text(slide, box.inset(0.04, 0.0), label, size=self.theme.fonts.caption_size, color="FFFFFF", bold=True, align="center", valign="middle", font=caption_font)
 
     def add_status_timeline_node(
         self,

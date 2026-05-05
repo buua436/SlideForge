@@ -21,33 +21,35 @@ def test_builtin_theme_aliases() -> None:
 def test_builtin_theme_catalog() -> None:
     expected = {
         "theme.tech_blue",
-        "theme.academic_clean",
-        "theme.business_navy",
-        "theme.data_dashboard",
-        "theme.medical_teal",
-        "theme.dark_tech",
-        "theme.claude_warm",
+        "theme.glassmorphism",
+        "theme.claude",
+        "theme.glitch_art",
+        "theme.paper_cut",
+        "theme.neon_cyberpunk",
+        "theme.apple",
+        "theme.google",
     }
 
     assert expected.issubset(set(builtin_theme_names()))
-    assert get_theme("theme.academic_clean").colors.primary == "1E3A8A"
-    assert get_theme("theme.business_navy").colors.accent == "D4AF37"
-    assert get_theme("theme.data_dashboard").colors.accent == "06B6D4"
-    assert get_theme("theme.medical_teal").colors.primary == "0F766E"
-    assert get_theme("theme.dark_tech").colors.background == "020617"
-    assert get_theme("theme.claude_warm").fonts.family == "Aptos"
-    assert get_theme("theme.claude_warm").chart_palette[1] == "D97706"
-    assert default_theme_registry().get_path("theme.dark_tech").name == "dark_tech.json"
+    assert get_theme("theme.tech_blue").colors.primary == "2563EB"
+    assert get_theme("theme.glassmorphism").colors.primary == "6366F1"
+    assert get_theme("theme.claude").fonts.family == "Noto Serif SC"
+    assert get_theme("theme.glitch_art").background_pattern == "scanlines"
+    assert get_theme("theme.paper_cut").shadow.blur_radius == 0.14
+    assert get_theme("theme.neon_cyberpunk").decorations.get("card_top_border") == "00FF41"
+    assert get_theme("theme.apple").fonts.family == "SF Pro Display"
+    assert get_theme("theme.google").fonts.family == "Google Sans"
 
 
 def test_theme_namespace_api() -> None:
     assert theme.tech_blue().name == "tech_blue"
-    assert theme.academic_clean().colors.border == "E5E7EB"
-    assert theme.business_navy().colors.primary == "0F2A5F"
-    assert theme.data_dashboard().chart_palette[1] == "06B6D4"
-    assert theme.medical_teal().colors.secondary == "38BDF8"
-    assert theme.dark_tech().colors.text_primary == "F8FAFC"
-    assert theme.claude_warm().colors.background == "F7F3EA"
+    assert theme.glassmorphism().colors.primary == "6366F1"
+    assert theme.claude().fonts.family == "Noto Serif SC"
+    assert theme.glitch_art().background_pattern == "scanlines"
+    assert theme.paper_cut().shadow.blur_radius == 0.14
+    assert theme.neon_cyberpunk().decorations.get("card_top_border") == "00FF41"
+    assert theme.apple().fonts.family == "SF Pro Display"
+    assert theme.google().fonts.family == "Google Sans"
 
 
 def test_loads_external_single_file_theme(tmp_path: Path) -> None:

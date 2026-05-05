@@ -25,6 +25,16 @@ def _style(ctx: RenderContext, key: str, default: str) -> str:
     return str(value) if value not in (None, "") else default
 
 
+def _style_num(ctx: RenderContext, key: str, default: float) -> float:
+    value = ctx.style.get(key)
+    if value is None or value == "":
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def _color(ctx: RenderContext, value: object, default: str) -> str:
     raw = str(value or "").strip()
     if not raw:
@@ -151,12 +161,14 @@ class LineChartComponent:
         max_value = max(values) if values else 1
         min_value = min(0, min(values) if values else 0)
         span = max(max_value - min_value, 1)
+        caption_size = ctx.theme.fonts.caption_size
+        line_width = _style_num(ctx, "line_width", 1.3)
 
         for idx in range(5):
             y = plot.y + idx * plot.h / 4
             r.line(ctx.slide, plot.x, y, plot.x + plot.w, y, ctx.theme.colors.border_light, width=0.6)
             label = int(max_value - idx * span / 4)
-            r.text(ctx.slide, Box(chart.x, y - 0.06, 0.34, 0.12), str(label), size=7, color=ctx.theme.colors.text_tertiary, align="right")
+            r.text(ctx.slide, Box(chart.x, y - 0.06, 0.34, 0.12), str(label), size=caption_size, color=ctx.theme.colors.text_tertiary, align="right")
 
         colors = _palette(ctx)
         category_count = max(1, len(self.categories) - 1)
@@ -170,11 +182,11 @@ class LineChartComponent:
                 points.append((x, y))
                 r.circle(ctx.slide, Box(x - 0.035, y - 0.035, 0.07, 0.07), color, line="FFFFFF")
             for start, end in zip(points, points[1:]):
-                r.line(ctx.slide, start[0], start[1], end[0], end[1], color, width=1.3)
+                r.line(ctx.slide, start[0], start[1], end[0], end[1], color, width=line_width)
 
         for idx, label in enumerate(self.categories):
             x = plot.x + idx * plot.w / category_count
-            r.text(ctx.slide, Box(x - 0.22, plot.y + plot.h + 0.12, 0.44, 0.12), label, size=7, color=ctx.theme.colors.text_secondary, align="center")
+            r.text(ctx.slide, Box(x - 0.22, plot.y + plot.h + 0.12, 0.44, 0.12), label, size=caption_size, color=ctx.theme.colors.text_secondary, align="center")
 
         legend_width = min(chart.w - 0.72, max(1.20, len(self.series[:4]) * 1.32))
         legend_x = chart.x + chart.w - legend_width
@@ -184,7 +196,7 @@ class LineChartComponent:
             name = str(item.get("name", ""))
             item_width = min(1.55, max(1.05, 0.36 + len(name) * 0.055))
             r.rect(ctx.slide, Box(cursor_x, chart.y + 0.07, 0.13, 0.04), color, rounded=True)
-            r.text(ctx.slide, Box(cursor_x + 0.18, chart.y + 0.005, item_width - 0.18, 0.16), name, size=7, color=ctx.theme.colors.text_secondary)
+            r.text(ctx.slide, Box(cursor_x + 0.18, chart.y + 0.005, item_width - 0.18, 0.16), name, size=caption_size, color=ctx.theme.colors.text_secondary)
             cursor_x += item_width + 0.14
 
     @classmethod
@@ -263,6 +275,7 @@ class BarChartComponent:
         colors = _palette(ctx)
         values = [value for item in self.series for value in _numbers(item.get("values", []))]
         max_value = max(values) if values else 1.0
+        caption_size = ctx.theme.fonts.caption_size
 
         for idx in range(4):
             y = plot.y + idx * plot.h / 3
@@ -280,12 +293,12 @@ class BarChartComponent:
                 r.rect(ctx.slide, Box(x, y, bar_w * 0.82, h), color, rounded=True)
         for idx, label in enumerate(self.categories):
             x = plot.x + idx * group_w + group_w / 2
-            r.text(ctx.slide, Box(x - 0.28, plot.y + plot.h + 0.12, 0.56, 0.12), label, size=7, color=ctx.theme.colors.text_secondary, align="center")
+            r.text(ctx.slide, Box(x - 0.28, plot.y + plot.h + 0.12, 0.56, 0.12), label, size=caption_size, color=ctx.theme.colors.text_secondary, align="center")
         cursor_x = chart.x + chart.w - min(2.8, len(self.series) * 1.20)
         for idx, item in enumerate(self.series[:3]):
             color = str(item.get("color", "")) or colors[idx % len(colors)]
             r.rect(ctx.slide, Box(cursor_x, chart.y + 0.06, 0.13, 0.04), color, rounded=True)
-            r.text(ctx.slide, Box(cursor_x + 0.18, chart.y, 0.92, 0.16), str(item.get("name", "")), size=7, color=ctx.theme.colors.text_secondary)
+            r.text(ctx.slide, Box(cursor_x + 0.18, chart.y, 0.92, 0.16), str(item.get("name", "")), size=caption_size, color=ctx.theme.colors.text_secondary)
             cursor_x += 1.10
 
     @classmethod
@@ -329,8 +342,8 @@ class PieChartComponent:
                 color = colors[idx % len(colors)]
                 r.rect(ctx.slide, Box(row.x, row.y + 0.04, 0.10, 0.08), color, rounded=True)
                 pct = values[idx] / total * 100 if idx < len(values) else 0
-                r.text(ctx.slide, Box(row.x + 0.16, row.y, row.w - 0.16, 0.12), str(label), size=7, color=ctx.theme.colors.text_primary, bold=True)
-                r.text(ctx.slide, Box(row.x + 0.16, row.y + 0.13, row.w - 0.16, 0.10), f"{pct:.0f}%", size=6, color=ctx.theme.colors.text_tertiary)
+                r.text(ctx.slide, Box(row.x + 0.16, row.y, row.w - 0.16, 0.12), str(label), size=ctx.theme.fonts.caption_size, color=ctx.theme.colors.text_primary, bold=True)
+                r.text(ctx.slide, Box(row.x + 0.16, row.y + 0.13, row.w - 0.16, 0.10), f"{pct:.0f}%", size=max(6, ctx.theme.fonts.caption_size - 1), color=ctx.theme.colors.text_tertiary)
 
     @classmethod
     def from_props(cls, props: Mapping[str, Any]) -> "PieChartComponent":

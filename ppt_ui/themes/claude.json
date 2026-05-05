@@ -1,0 +1,100 @@
+{
+  "name": "claude",
+  "metadata": {
+    "display_name": "Claude",
+    "suitable_for": ["Methodology", "Principles", "Research conclusions", "Product thinking", "Agent design docs"],
+    "visual_features": ["Warm cream paper", "Serif typography", "Ochre accent", "Open layout", "Thin line separators", "Typography-driven design"]
+  },
+  "background": "#F2ECE2",
+  "surface": "#F7F3ED",
+  "surface_alt": "#EDE7DB",
+  "surface_white": "#FAF8F4",
+  "primary": "#B8651B",
+  "primary_dark": "#8C4E15",
+  "primary_soft": "#F5EDE3",
+  "primary_tint": "#E8D5C0",
+  "accent": "#B8651B",
+  "accent_soft": "#F5EDE3",
+  "accent_tint": "#E8D5C0",
+  "secondary": "#7A6E62",
+  "success": "#6B7C5E",
+  "success_soft": "#EFF3EB",
+  "warning": "#B8651B",
+  "warning_soft": "#F5EDE3",
+  "danger": "#A04030",
+  "text_primary": "#1A1714",
+  "text_secondary": "#7A6E62",
+  "text_muted": "#A89E94",
+  "border": "#D9D0C4",
+  "border_light": "#E8E2D8",
+  "font_family": "Noto Serif SC",
+  "title_font_family": "Georgia",
+  "latin_font_family": "Arial",
+  "caption_font_family": "Inter",
+  "title_size": 36,
+  "subtitle_size": 15,
+  "h1_size": 30,
+  "h2_size": 18,
+  "body_size": 11,
+  "caption_size": 9,
+  "tiny_size": 8,
+  "display_size": 52,
+  "page_margin": 0.65,
+  "content_gap": 0.24,
+  "card_radius": 0.02,
+  "card_shadow": false,
+  "chart_palette": ["#B8651B", "#7A6E62", "#6B7C5E", "#A04030", "#8C4E15", "#C49A6C"],
+  "shadow": {
+    "blur_radius": 0.0,
+    "distance": 0.0,
+    "opacity": 0.0
+  },
+  "decorations": {
+    "accent_bar_width": 0.05,
+    "footer_line_width": 0.018,
+    "footer_line_lengths": [1.0, 0.5],
+    "card_radius": 0.02
+  },
+  "component_styles": {
+    "card.default": {
+      "fill": "FAF8F4",
+      "border": "D9D0C4",
+      "line_width": 0.3,
+      "opacity": 1.0
+    },
+    "metric_card.default": {
+      "fill": "FAF8F4",
+      "border": "E8D5C0",
+      "accent": "B8651B",
+      "line_width": 0.3
+    },
+    "chart.line.default": {
+      "fill": "FAF8F4",
+      "border": "E8E2D8",
+      "line_width": 1.5
+    },
+    "chart.bar.default": {
+      "fill": "FAF8F4",
+      "border": "E8E2D8"
+    },
+    "table.comparison": {
+      "fill": "FAF8F4",
+      "border": "D9D0C4",
+      "accent": "F5EDE3",
+      "title": "8C4E15",
+      "body": "1A1714"
+    },
+    "narrative.timeline.default": {
+      "fill": "FAF8F4",
+      "border": "D9D0C4",
+      "accent": "B8651B"
+    },
+    "conclusion.hero": {
+      "fill": "1A1714",
+      "border": "1A1714",
+      "accent": "B8651B",
+      "title": "F2ECE2",
+      "body": "D9D0C4"
+    }
+  }
+}

@@ -46,6 +46,9 @@ class SlideMaster:
         return deep_merge(self.chrome, layout_chrome, override_chrome, page.chrome)
 
     def render_background(self, ctx: RenderContext, page: Page) -> None:
+        if not self.background:
+            ctx.renderer.background(ctx.slide)
+            return
         fill = str(self.background.get("fill", ctx.theme.colors.background))
         ctx.slide.background.fill.solid()
         ctx.slide.background.fill.fore_color.rgb = ctx.renderer.rgb(fill)
@@ -71,7 +74,8 @@ class SlideMaster:
         if page.title and layout.title_box and chrome_visible(chrome, "title"):
             size = ctx.theme.fonts.title_size if page.type == "page.cover" else ctx.theme.fonts.h1_size
             align = "center" if page.type in {"page.qa", "page.closing"} else "left"
-            r.text(ctx.slide, layout.title_box, page.title, size=size, color=ctx.theme.colors.text_primary, bold=True, align=align)
+            title_font = getattr(ctx.theme.fonts, "title_font", "") or None
+            r.text(ctx.slide, layout.title_box, page.title, size=size, color=ctx.theme.colors.text_primary, bold=True, align=align, font=title_font)
 
         if page.subtitle and layout.subtitle_box and chrome_visible(chrome, "subtitle"):
             align = "center" if page.type in {"page.qa", "page.closing"} else "left"
@@ -90,7 +94,8 @@ class SlideMaster:
         if isinstance(page_number, dict) and page_number.get("visible", self.name != "blank") and layout.page_number_box:
             fmt = str(page_number.get("format", "{current} / {total}"))
             text = fmt.format(current=page_index, total=total_pages)
-            r.text(ctx.slide, layout.page_number_box, text, size=ctx.theme.fonts.tiny_size, color=ctx.theme.colors.text_tertiary, align="right")
+            caption_font = getattr(ctx.theme.fonts, "caption_font", "") or None
+            r.text(ctx.slide, layout.page_number_box, text, size=ctx.theme.fonts.tiny_size, color=ctx.theme.colors.text_tertiary, align="right", font=caption_font)
 
 
 @dataclass

@@ -249,23 +249,26 @@ class ThemeNamespace:
     def tech_blue(self):
         return get_theme("theme.tech_blue")
 
-    def academic_clean(self):
-        return get_theme("theme.academic_clean")
+    def glassmorphism(self):
+        return get_theme("theme.glassmorphism")
 
-    def business_navy(self):
-        return get_theme("theme.business_navy")
+    def claude(self):
+        return get_theme("theme.claude")
 
-    def data_dashboard(self):
-        return get_theme("theme.data_dashboard")
+    def glitch_art(self):
+        return get_theme("theme.glitch_art")
 
-    def medical_teal(self):
-        return get_theme("theme.medical_teal")
+    def paper_cut(self):
+        return get_theme("theme.paper_cut")
 
-    def dark_tech(self):
-        return get_theme("theme.dark_tech")
+    def neon_cyberpunk(self):
+        return get_theme("theme.neon_cyberpunk")
 
-    def claude_warm(self):
-        return get_theme("theme.claude_warm")
+    def apple(self):
+        return get_theme("theme.apple")
+
+    def google(self):
+        return get_theme("theme.google")
 
 
 page = PageNamespace()

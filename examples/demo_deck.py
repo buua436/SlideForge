@@ -57,12 +57,15 @@ def _export_assets(output: Path, screenshots_dir: Path, showcase_path: Path, *, 
 
 
 def _render_theme_demos(source: Path, output_dir: Path, themes: Sequence[str], *, no_screenshots: bool) -> None:
+    custom_demos_dir = source.parent / "demos"
     for theme_name in themes:
         slug = _theme_slug(theme_name)
         theme_dir = output_dir / slug
         theme_dir.mkdir(parents=True, exist_ok=True)
         output = theme_dir / "demo.pptx"
-        _render_deck_with_theme(source, theme_name, output)
+        custom_json = custom_demos_dir / f"{slug}.json"
+        deck_source = custom_json if custom_json.exists() else source
+        _render_deck_with_theme(deck_source, theme_name, output)
         print(f"Generated {output}")
         if not no_screenshots:
             _export_assets(

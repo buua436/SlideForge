@@ -1,10 +1,8 @@
 # SlideForge 用户文档
 
-> Pre-v1 status: 当前代码正在按 [docs/design.md](design.md) 迁移到 `Page + Blocks + Master` 架构。本文档的部分旧 `slide.*` / 单组件成页 API 说明已不是最新实现；当前请以 `docs/design.md`、`examples/sample_deck.json` 和测试为准，稳定后会重新生成正式用户文档。
+SlideForge 是一个面向 Agent 的 Python PPT UI 组件库。它用结构化 JSON DSL 或 Python namespace API 描述页面、布局和组件，再通过 `python-pptx` 生成可编辑的 `.pptx` 文件。Agent 不需要直接调用 `add_textbox`、`add_shape` 等底层 API，只需要选择组件 type、填写内容数据、选择主题和布局。
 
-SlideForge 是一个面向 Agent 的 Python PPT UI 组件库。它用结构化 JSON DSL 或 Python namespace API 描述演示文稿，再通过组件注册中心、解析器和 `python-pptx` 渲染为可编辑的 `.pptx` 文件。用户和 Agent 不需要直接调用 `add_textbox`、`add_shape` 等底层 API，而是选择类似前端 UI 框架的组件：`slide.title`、`data.metric_cards`、`chart.line`、`narrative.timeline` 等。
-
-当前文档基于项目代码扫描整理。标记为“已实现”的 API 已在当前代码中存在；标记为“计划支持”的能力代表架构预留或路线图方向，不应在当前版本中直接使用。
+当前实现已经迁移到 `Deck -> Page -> Block -> Component` 架构：一页 `Page` 可以包含多个独立 `Block`，每个 `Block` 对应一个可复用组件。页面标题、页脚、页码、母版和公共装饰由 Page/Master 管理，组件只负责在分配到的 `Box` 中渲染自己的内容。
 
 ## 目录
 
@@ -19,6 +17,7 @@ SlideForge 是一个面向 Agent 的 Python PPT UI 组件库。它用结构化 J
 - [Component API](#component-api)
 - [Theme System](#theme-system)
 - [Layout System](#layout-system)
+- [Masters And Chrome](#masters-and-chrome)
 - [Renderer](#renderer)
 - [Export Screenshots](#export-screenshots)
 - [Full Examples](#full-examples)
@@ -29,61 +28,55 @@ SlideForge 是一个面向 Agent 的 Python PPT UI 组件库。它用结构化 J
 
 ## Introduction
 
-SlideForge 解决的问题是：让 Agent 能稳定生成专业、统一、可编辑的 PPT，而不是直接拼接大量 `python-pptx` shape 代码。它把 PPT 页面抽象成组件树，组件负责布局、主题、字号、卡片、表格、图表和叙事结构，Agent 只需要生成语义化 JSON。
+SlideForge 解决的是“让 Agent 生成专业、统一、可编辑 PPT”的问题。直接让 Agent 写 `python-pptx` shape 代码会带来大量重复坐标、样式不一致、组件无法复用、后续改主题困难等问题。SlideForge 把 PPT 生成拆成更接近前端 UI 框架的模型：Agent 输出 JSON，组件库负责解析、布局、主题合并和渲染。
 
-与直接使用 `python-pptx` 的区别：
-
-| 方式 | 关注点 | 结果 |
-| --- | --- | --- |
-| 直接使用 `python-pptx` | 坐标、shape、textbox、颜色、字号 | 灵活但重复、难维护，Agent 容易生成不一致页面 |
-| 使用 SlideForge | 组件类型、内容字段、主题 token、布局区域 | 统一风格、组件复用、输出可编辑 `.pptx` |
-
-适用场景包括答辩汇报、项目方案、数据报告、商业演示、自动化周报、实验结果汇报、运营分析、项目复盘和 Agent 自动生成报告。
+适用场景包括答辩汇报、项目方案、数据报告、商业演示、自动化周报、实验结果汇报、产品方法论和技术方案 deck。生成结果是普通 `.pptx`，文本、形状、表格、图表和图片尽量保持可编辑。
 
 ## Architecture
 
-SlideForge 当前采用三层到四层的渲染链路：
+当前渲染链路如下：
 
 ```text
-JSON DSL
+JSON DSL / Python API
   -> Component Registry / Parser
-  -> Deck / Slide / Component Tree
+  -> Deck / Page / Block Tree
+  -> Theme / Master / Layout resolution
   -> PptxRenderer
   -> editable .pptx
 ```
 
-| 层级 | 职责 | 当前实现 |
-| --- | --- | --- |
-| JSON DSL | Agent 或用户输入的结构化页面描述。 | `examples/sample_deck.json`、`ppt_ui/schema/deck_schema.py` |
-| Component Registry / Parser | 根据 `type` 路由到组件工厂，避免 parser 变成大量 if/else。 | `ppt_ui/core/registry.py`、`ppt_ui/schema/parser.py` |
-| Deck / Slide / Component Tree | 内部演示文稿对象，包含主题和 slide 组件。 | `Deck`、`Slide`、`Component` |
-| PptxRenderer | 统一封装 `python-pptx`，组件通过 renderer helper 绘制。 | `ppt_ui/renderer/pptx_renderer.py` |
-| editable `.pptx` | 最终输出文件，保留 PowerPoint 可编辑对象。 | `Deck.render(path)` |
-
-组件不应该直接暴露 `python-pptx` 细节给 Agent。Agent 的稳定接口是 JSON DSL；Python 用户可以使用 namespace API 组装 deck。
+| 层 | 职责 |
+| --- | --- |
+| JSON DSL / Python API | 用户或 Agent 的结构化输入，描述页面、组件、props、layout、style。 |
+| Component Registry / Parser | 校验页面和组件 type，把 JSON 转成 `Deck`、`Page`、`Block`。 |
+| Deck / Page / Block Tree | 内部文档模型。Deck 管整套 PPT，Page 管一页 PPT，Block 是页面内的组件实例。 |
+| Theme / Master / Layout | 主题提供默认视觉 token，母版提供标题/页脚/页码等 chrome，布局把 block 映射到 `Box`。 |
+| PptxRenderer | 集中调用 `python-pptx`，提供统一的文本、卡片、图表、图标和图片渲染 helper。 |
+| editable .pptx | 最终 PowerPoint 文件，可继续手动编辑。 |
 
 ## Installation
 
-### 环境要求
+环境要求：
 
-| 项目 | 要求 |
+| 项 | 要求 |
 | --- | --- |
-| Python | `>=3.10` |
+| Python | 3.10+，当前测试环境为 3.11 |
 | 包管理 | 推荐 `uv` |
-| PPTX 生成 | `python-pptx>=1.0.2` |
-| 截图导出 | Windows + Microsoft PowerPoint + `pywin32` |
+| PPTX 渲染 | `python-pptx` |
+| 截图导出 | Windows PowerPoint COM + `pywin32`，没有 PowerPoint 时会报 `ScreenshotExportError` |
+| 远程 icon | 默认走 Iconify API，需要网络；本地 SVG provider 不需要网络 |
 
-### 安装依赖
+常用命令：
 
 ```bash
-uv sync --dev
+uv sync
+uv run pytest
+uv run python examples/demo_deck.py
 ```
-
-如果只需要生成 `.pptx`，核心依赖是 `python-pptx`。如果需要把每页导出为 PNG 截图，Windows 上还需要 `pywin32` 和本机 PowerPoint。
 
 ## Quick Start
 
-生成 demo deck：
+从 JSON 生成 demo：
 
 ```bash
 uv run python examples/demo_deck.py
@@ -91,1309 +84,446 @@ uv run python examples/demo_deck.py
 
 默认输出：
 
-| 输出 | 路径 |
+```text
+examples/demo.pptx
+examples/demo_screenshots/
+examples/demo_showcase.png
+examples/theme_demos/<theme>/demo.pptx
+examples/theme_demos/<theme>/screenshots/
+examples/theme_demos/<theme>/showcase.png
+```
+
+常用参数：
+
+| 参数 | 说明 |
 | --- | --- |
-| PPTX | `examples/demo.pptx` |
-| 截图目录 | `examples/demo_screenshots/` |
-| 合成展示图 | `examples/demo_showcase.png` |
-| 各主题 demo 目录 | `examples/theme_demos/<theme_name>/` |
+| `--output examples/demo.pptx` | 指定主 demo 输出路径。 |
+| `--screenshots-dir examples/demo_screenshots` | 指定主 demo 截图目录，每次生成会覆盖。 |
+| `--showcase examples/demo_showcase.png` | 指定拼图展示图输出路径。 |
+| `--theme-demos-dir examples/theme_demos` | 指定所有内置主题 demo 输出目录。 |
+| `--skip-theme-demos` | 只生成主 demo，不生成每个主题的 demo。 |
+| `--no-screenshots` | 只生成 PPTX，不导出截图和 showcase。 |
 
-每个主题目录包含：
-
-| 输出 | 路径 |
-| --- | --- |
-| PPTX | `examples/theme_demos/<theme_name>/demo.pptx` |
-| 截图目录 | `examples/theme_demos/<theme_name>/screenshots/` |
-| 合成展示图 | `examples/theme_demos/<theme_name>/showcase.png` |
-
-指定输出路径：
-
-```bash
-uv run python examples/demo_deck.py --output examples/custom_demo.pptx
-```
-
-指定截图目录：
-
-```bash
-uv run python examples/demo_deck.py --screenshots-dir examples/custom_screenshots
-```
-
-禁用截图导出：
-
-```bash
-uv run python examples/demo_deck.py --no-screenshots
-```
-
-跳过各主题 demo 目录：
-
-```bash
-uv run python examples/demo_deck.py --skip-theme-demos
-```
-
-从自定义 JSON 生成 PPTX：
+从任意 JSON 文件加载：
 
 ```python
-from ppt_ui.schema.parser import deck_from_json
+from ppt_ui import deck_from_json
 
 deck = deck_from_json("examples/sample_deck.json")
 deck.render("examples/demo.pptx")
 ```
 
-当前 `examples/demo_deck.py` 固定读取 `examples/sample_deck.json`。命令行 `--source` 参数属于计划支持。
-
 ## Directory Structure
 
-| 路径 | 文件职责 | 主要类/函数 | 关系 |
-| --- | --- | --- | --- |
-| `ppt_ui/core/presentation.py` | Deck 管理。 | `Deck.add_slide()`、`Deck.render()` | 调用 `PptxRenderer` 输出 PPTX |
-| `ppt_ui/core/slide.py` | Slide 基类。 | `Slide.render(ctx, box)` | 所有页面级组件继承它 |
-| `ppt_ui/core/component.py` | Component 基类和渲染上下文。 | `Component`、`RenderContext` | 块级组件和 slide 共享生命周期 |
-| `ppt_ui/core/theme.py` | 主题 token 与主题加载。 | `Theme`、`ThemeLoader`、`ThemeRegistry`、`ColorTokens`、`FontTokens`、`get_theme()` | 被 renderer 和组件读取 |
-| `ppt_ui/themes/` | 内置 JSON 主题定义。 | `*.json` 主题文件 | 由 `ThemeLoader` 通过主题 registry 加载 |
-| `ppt_ui/core/layout.py` | 布局区域计算。 | `Box`、`PageBox` | 组件用 inch 坐标拆分内容区域 |
-| `ppt_ui/core/registry.py` | 组件注册中心。 | `ComponentRegistry` | parser 根据 type 创建 slide |
-| `ppt_ui/components/basic.py` | 基础块组件。 | `Title`、`TextBlock`、`Divider`、`Icon` | 目前主要作为内部基础组件和占位能力 |
-| `ppt_ui/components/slides.py` | 页面与布局类组件。 | `TitleSlide`、`SectionSlide`、`GridSlide` 等 | 对应 `slide.*` 和 `layout.*` |
-| `ppt_ui/components/data.py` | 数据和图表组件。 | `MetricCard`、`LineChartSlide`、`ComparisonTableSlide` 等 | 对应 `data.*`、`chart.*`、`table.*` |
-| `ppt_ui/components/narrative.py` | 叙事和分析组件。 | `TimelineSlide`、`ProcessFlowSlide`、`SWOTSlide` 等 | 对应 `narrative.*` |
-| `ppt_ui/renderer/pptx_renderer.py` | PPTX 渲染层。 | `PptxRenderer` 与 helper 方法 | 统一封装 `python-pptx` |
-| `ppt_ui/schema/deck_schema.py` | JSON TypedDict。 | `DeckDict`、`SlideDict` | 当前是轻量类型提示，不是完整校验器 |
-| `ppt_ui/schema/parser.py` | JSON 到 Deck/Slide 的解析。 | `deck_from_json()`、`deck_from_dict()`、`build_default_registry()` | 注册 namespace type 和兼容旧 type |
-| `ppt_ui/export/screenshots.py` | PPTX 截图导出。 | `export_pptx_screenshots()` | 使用 PowerPoint COM，运行时覆盖输出目录 |
-| `ppt_ui/icons/provider.py` | 前端图标库适配层。 | `IconRegistry`、`IconifyApiProvider`、`IconifyJsonProvider`、`LocalSvgIconProvider` | 解析 Iconify 兼容 SVG 并支持渲染进 PPT |
-| `ppt_ui/api.py` | 对外 namespace API。 | `chart`、`data`、`layout`、`narrative`、`slide`、`table` | Python 用户推荐入口 |
-| `examples/demo_deck.py` | 示例生成脚本。 | `main()` | 读取 sample JSON，生成 PPTX 和截图 |
-| `examples/sample_deck.json` | Agent JSON DSL 样例。 | namespace `type` | demo 数据源 |
-| `tests/` | 测试。 | `test_parser.py` | 覆盖 parser、registry、namespace API |
+| 路径 | 说明 |
+| --- | --- |
+| `ppt_ui/core/presentation.py` | `Deck`，管理主题、页面、母版、组件注册表和图标注册表。 |
+| `ppt_ui/core/page.py` | `Page` 和 `Block`，当前 DSL 的核心数据结构。 |
+| `ppt_ui/core/component.py` | `RenderContext` 和组件协议。 |
+| `ppt_ui/core/theme.py` | Theme dataclass、ThemeLoader、ThemeRegistry、内置主题注册。 |
+| `ppt_ui/core/layout.py` | `Box`、`PageLayout`、内置页面布局和 block box 解析。 |
+| `ppt_ui/core/master.py` | `SlideMaster`、`MasterRegistry`、默认母版。 |
+| `ppt_ui/core/registry.py` | `ComponentRegistry`，负责 type 到组件 factory 的路由。 |
+| `ppt_ui/components/blocks.py` | 当前主要块级组件实现。 |
+| `ppt_ui/components/registry.py` | 默认组件注册表。 |
+| `ppt_ui/renderer/pptx_renderer.py` | 基于 `python-pptx` 的统一渲染层。 |
+| `ppt_ui/schema/parser.py` | JSON 解析、校验和 `Deck` 构建。 |
+| `ppt_ui/export/screenshots.py` | PowerPoint COM 截图导出。 |
+| `ppt_ui/export/contact_sheet.py` | 多页截图拼图展示图。 |
+| `ppt_ui/icons/provider.py` | Iconify、本地 SVG、URL template 等 icon provider。 |
+| `ppt_ui/themes/*.json` | 内置主题 JSON。 |
+| `examples/demo_deck.py` | demo 生成入口。 |
+| `examples/sample_deck.json` | 当前 JSON DSL 样例。 |
+| `tests/` | parser、theme、icon 测试。 |
 
 ## Core Concepts
 
 ### Deck
 
-`Deck` 管理整套演示文稿，包含主题、标题和 slides。调用 `Deck.render(path)` 会创建 `PptxRenderer`，逐页渲染并保存 `.pptx`。
+`Deck` 管理整套演示文稿。
 
-| 属性/方法 | 类型 | 说明 |
-| --- | --- | --- |
-| `slides` | `list[Slide]` | 页面组件列表 |
-| `theme` | `Theme` | 当前主题 |
-| `title` | `str` | Deck 标题 |
-| `add_slide(slide)` | method | 添加一页 |
-| `render(output_path)` | method | 生成 PPTX 并返回路径 |
+| 属性/方法 | 说明 |
+| --- | --- |
+| `pages` | `Page` 列表。 |
+| `theme` | 已解析的 `Theme` 对象。 |
+| `default_master` | 默认母版名，默认 `tech_blue`。 |
+| `masters` | `MasterRegistry`。 |
+| `components` | `ComponentRegistry`。 |
+| `icons` | `IconRegistry`。 |
+| `add_page(page)` | 添加页面。 |
+| `render(path)` | 生成 PPTX。 |
 
-```python
-from ppt_ui import Deck, slide
+### Page
 
-deck = Deck(title="Quarterly Review")
-deck.add_slide(slide.title(title="Quarterly Review", subtitle="Generated by SlideForge"))
-deck.render("examples/review.pptx")
-```
-
-注意事项：`Deck.render()` 只生成 PPTX，不负责截图。截图由 `ppt_ui.export.export_pptx_screenshots()` 或 `examples/demo_deck.py` 控制。
-
-### Slide
-
-`Slide` 是页面级组件基类。每个 slide 实现：
-
-```python
-def render(self, ctx: RenderContext, box: PageBox) -> None:
-    ...
-```
-
-生命周期：
-
-1. `Deck.render()` 创建 `PptxRenderer`。
-2. `PptxRenderer.render_deck()` 创建空白 PowerPoint slide。
-3. renderer 创建 `RenderContext(slide, theme, renderer)`。
-4. slide 组件在 `PageBox` 区域内绘制内容。
-
-新增 slide 时，继承 `Slide`、定义 dataclass 字段、实现 `render()`，再注册到 `ComponentRegistry`。
-
-### Component
-
-`Component` 是块级组件基类，可被多个 slide wrapper 复用。例如 `MetricCard` 是块级组件，`MetricCardsSlide` 负责把多个 `MetricCard` 排成一页。
-
-```python
-@dataclass
-class Component:
-    def render(self, ctx: RenderContext, box: Box) -> None:
-        raise NotImplementedError
-```
-
-### RenderContext
+`Page` 是一页 PPT。它负责页面级语义和公共元素，不负责具体组件内容。
 
 | 字段 | 说明 |
 | --- | --- |
-| `slide` | 当前 `python-pptx` slide 对象 |
-| `theme` | 当前 `Theme` |
-| `renderer` | 当前 `PptxRenderer` |
+| `type` | 当前支持 `page.cover`、`page.standard`、`page.section`、`page.blank`、`page.closing`、`page.qa`。 |
+| `layout` | 布局名或 inline layout spec。 |
+| `master` | 当前页使用的母版名。 |
+| `use_master` | 是否使用母版。 |
+| `chrome` | 页脚、页码、logo、accent bar、section 等页面元素配置。 |
+| `title` / `subtitle` | 页面标题区内容。 |
+| `blocks` | 页面内组件实例。 |
+| `hidden` | 隐藏页不会渲染。 |
 
-组件应通过 `ctx.renderer` 绘制，而不是在业务组件中散落 `python-pptx` 细节。
+### Block
+
+`Block` 是页面内的一个组件实例。
+
+| 字段 | 说明 |
+| --- | --- |
+| `id` | 可选稳定标识。 |
+| `type` | 组件 type，例如 `chart.line`。 |
+| `variant` | 组件变体，默认 `default`。主题会用它查找默认样式。 |
+| `props` | 组件内容数据。 |
+| `layout` | block 在页面内容区的位置。 |
+| `style` | 当前 block 的局部样式覆盖。 |
+| `visible` | 是否渲染。 |
+| `metadata` | 扩展元数据。 |
+
+### Component
+
+组件只负责自己 box 内部的内容渲染。它不应该画页面标题、页脚、页码、logo 或全局背景。当前默认组件都在 `ppt_ui/components/blocks.py` 中实现，并通过 `build_default_component_registry()` 注册。
+
+### RenderContext
+
+`RenderContext` 在组件渲染时传入，包含：
+
+| 字段 | 说明 |
+| --- | --- |
+| `slide` | 当前 `python-pptx` slide 对象。 |
+| `theme` | 当前主题。 |
+| `renderer` | `PptxRenderer` helper。 |
+| `style` | 主题默认样式和 block style 合并后的结果。 |
 
 ### Box
 
-`Box` 是布局区域对象，单位是 inch。
-
-| 方法 | 说明 |
-| --- | --- |
-| `inset(left, top, right=None, bottom=None)` | 生成内边距后的区域 |
-| `split_cols(count, gutter=0.0)` | 按列拆分区域 |
-| `split_rows(count, gutter=0.0)` | 按行拆分区域 |
-| `top(height)` | 获取顶部区域 |
-| `bottom(height)` | 获取底部区域 |
-| `remaining_below(top_height, gap=0.0)` | 获取顶部区域下方剩余空间 |
-
-### Theme
-
-`Theme` 是设计 token 容器，包含颜色、字体、间距、圆角、阴影、图表色板和组件级 style。默认内置主题是 `theme.tech_blue`。
+`Box` 使用 inch 作为单位，包含 `x`、`y`、`w`、`h`。常用方法包括 `inset()`、`split_cols()`、`split_rows()`、`top()`、`bottom()`、`remaining_below()`。
 
 ### ComponentRegistry
 
-`ComponentRegistry` 负责把 `type` 路由到组件工厂。它支持两种形式：
-
-```json
-{"type": "chart.line"}
-```
-
-也支持 family + variant：
-
-```json
-{"type": "chart", "variant": "line"}
-```
-
-当前默认 registry 同时保留旧 type 兼容，例如 `title_slide`、`metric_cards`、`comparison_table`。
+`ComponentRegistry` 避免 parser 出现大量 if/else。当前注册的组件 type 来自 `ppt_ui/components/registry.py`，未知 type 会在 strict 模式下抛出诊断错误。
 
 ## JSON DSL Guide
 
-### 顶层结构
-
-当前已实现的顶层字段只有 `title`、`theme`、`slides`。其余字段属于计划支持或由外部脚本处理。
+### Top-Level Fields
 
 ```json
 {
-  "title": "SlideForge Demo",
-  "theme": "default_blue",
-  "slides": [
-    {
-      "type": "slide.title",
-      "title": "可复用 PPT UI 组件库",
-      "subtitle": "适用于答辩汇报 / 项目方案 / 数据报告 / 商业演示"
-    }
-  ]
+  "schema_version": "0.2",
+  "title": "SlideForge Component Library Demo",
+  "theme": "theme.tech_blue",
+  "default_master": "tech_blue",
+  "metadata": {},
+  "masters": {},
+  "pages": []
 }
 ```
 
-| 字段 | 类型 | 是否必填 | 默认值 | 当前状态 | 说明 |
-| --- | --- | --- | --- | --- | --- |
-| `title` | `string` | 否 | `"SlideForge Deck"` | 已实现 | Deck 标题 |
-| `theme` | `string/object` | 否 | `default_blue` | 已实现 | 内置主题名、外部 JSON 文件、外部主题目录或 inline theme object |
-| `slides` | `array<object>` | 否 | `[]` | 已实现 | 页面列表 |
-| `metadata` | `object` | 否 | 无 | 计划支持 | 当前 parser 忽略 |
-| `export` | `object` | 否 | 无 | 计划支持 | 当前由 demo 脚本参数控制 |
-| `screenshot` | `object` | 否 | 无 | 计划支持 | 当前由 `--screenshots-dir` 和 `--no-screenshots` 控制 |
-| `page_size` | `object/string` | 否 | 主题尺寸 | 计划支持 | 当前由 `Theme.slide_width/slide_height` 控制 |
-| `language` | `string` | 否 | 无 | 计划支持 | 当前 parser 忽略 |
-| `author` | `string` | 否 | 无 | 计划支持 | 当前 parser 忽略 |
-| `date` | `string` | 否 | 无 | 计划支持 | 当前 parser 忽略，封面页可使用 `slide.title.date` |
-| `version` | `string` | 否 | 无 | 计划支持 | 当前 parser 忽略 |
+| 字段 | 类型 | 是否必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `schema_version` | `string` | 否 | `0.2` | 非 `0.2` 会产生 warning。 |
+| `title` | `string` | 否 | `SlideForge Deck` | Deck 标题。 |
+| `theme` | `string/object` | 否 | `default_blue` | 内置主题名、外部主题路径、目录主题或 inline theme dict。 |
+| `default_master` | `string` | 否 | `tech_blue` | 默认母版名。 |
+| `metadata` | `object` | 否 | `{}` | Deck 元数据。 |
+| `masters` | `object` | 否 | 默认注册 `default`、`tech_blue`、`blank` | 自定义母版配置。 |
+| `pages` | `array` | 是 | 无 | 页面数组。 |
 
-### Slide 通用字段
+当前 DSL 不读取顶层 `export`、`screenshot`、`page_size`、`language`、`author`、`date`、`version`。这些字段可以放在 `metadata` 中，或由外部脚本处理。
 
-不同组件支持的字段不同。当前 parser 直接把字段映射到组件 dataclass，未实现统一的 `props/style/layout` 合并机制。
+### Page Fields
 
-| 字段 | 类型 | 当前状态 | 说明 |
-| --- | --- | --- | --- |
-| `type` | `string` | 已实现 | 必须能在 registry 中找到，例如 `chart.line` |
-| `variant` | `string` | 已实现 | 可选；用于 `type + variant` 路由，例如 `{"type": "chart", "variant": "line"}` |
-| `title` | `string` | 多数组件已实现 | 页面主标题 |
-| `subtitle` | `string` | 多数组件已实现 | 页面副标题 |
-| `content` | `string/object` | 计划支持 | 当前无统一处理 |
-| `items` | `array` | 部分组件已实现 | `layout.contents`、`layout.grid`、`data.progress_bars`、`narrative.timeline` 等使用 |
-| `blocks` | `array` | 计划支持 | 当前无通用块级组件树 parser |
-| `cards` | `array` | 部分组件已实现 | `data.metric_cards`、`layout.three_info_cards` |
-| `data` | `object` | 计划支持 | 当前图表直接使用 `categories/series/segments` 等字段 |
-| `style` | `object` | 计划支持 | 当前没有 per-slide style override |
-| `layout` | `object` | 计划支持 | 当前没有 per-slide layout override |
-| `footer` | `string/object` | 计划支持 | 当前多数 slide 内部调用 `add_footer()` |
-| `notes` | `string` | 计划支持 | 当前不写 speaker notes |
-| `metadata` | `object` | 计划支持 | 当前 parser 忽略 |
-| `hidden` | `boolean` | 计划支持 | 当前不会跳过 slide |
-| `page_number` | `string/number` | 计划支持 | 当前仅 `layout.header_footer.page` 可显示页码文本 |
+```json
+{
+  "type": "page.standard",
+  "layout": "standard",
+  "title": "Metrics And Trend",
+  "subtitle": "Multiple independent components rendered on one page",
+  "master": "tech_blue",
+  "use_master": true,
+  "chrome": {},
+  "blocks": []
+}
+```
 
-### Namespace Type 规范
+| 字段 | 类型 | 是否必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `type` | `string` | 否 | `page.standard` | 页面 type。 |
+| `layout` | `string/object` | 否 | 从 page type 推导 | 内置布局或 inline layout spec。 |
+| `master` | `string` | 否 | `default_master` | 当前页母版。 |
+| `use_master` | `boolean` | 否 | `true` | `page.blank` Python helper 默认 `false`。 |
+| `master_overrides` | `object` | 否 | `{}` | 页面级母版覆盖。 |
+| `chrome` | `object` | 否 | `{}` | 控制标题、页脚、页码、logo、accent bar 等。 |
+| `title` | `string` | 否 | `""` | 页标题。 |
+| `subtitle` | `string` | 否 | `""` | 页副标题。 |
+| `blocks` | `array` | 否 | `[]` | 当前页组件列表。 |
+| `notes` | `string` | 否 | `""` | 当前保存在模型中，尚未写入 speaker notes。 |
+| `hidden` | `boolean` | 否 | `false` | 隐藏页不渲染。 |
+| `metadata` | `object` | 否 | `{}` | 页面元数据，例如 section number。 |
 
-推荐 Agent 始终使用 namespace type。
+### Block Fields
 
-| Namespace | 已实现 | 计划支持 |
-| --- | --- | --- |
-| `slide` | `slide.title`、`slide.section`、`slide.conclusion`、`slide.qa` | `slide.content` |
-| `layout` | `layout.contents`、`layout.two_column`、`layout.grid`、`layout.image_text`、`layout.three_info_cards`、`layout.quote`、`layout.header_footer`、`layout.design_spec` | `layout.cards`、`layout.blank` |
-| `data` | `data.metric_card`、`data.metric_cards`、`data.progress_bars`、`data.gantt`、`data.heatmap`、`data.ab_comparison`、`data.highlight_insight`、`data.annotations` | `data.progress` alias |
-| `chart` | `chart.line`、`chart.bar`、`chart.pie`、`chart.donut` | `chart.scatter`、`chart.area`、更多图表 |
-| `table` | `table.comparison` | `table.basic` |
-| `narrative` | `narrative.timeline`、`narrative.process_flow`、`narrative.roadmap`、`narrative.swot`、`narrative.problem_solution`、`narrative.logic_pyramid`、`narrative.risk_table`、`narrative.milestone`、`narrative.relation_table`、`narrative.story_structure` | 更多分析模板 |
-| `media` | `media.icon` | `media.image` 增强 |
-| `theme` | `theme.tech_blue`、`theme.academic_clean`、`theme.business_navy`、`theme.data_dashboard`、`theme.medical_teal`、`theme.dark_tech`、`theme.claude_warm` | 更多外部主题包 |
+```json
+{
+  "id": "trend",
+  "type": "chart.line",
+  "variant": "default",
+  "layout": {"mode": "grid", "col": 5, "span": 8, "row": 1, "row_span": 2},
+  "style": {"line_width": 1.6},
+  "props": {
+    "categories": ["4/29", "5/6", "5/13"],
+    "series": [{"name": "Score", "values": [23, 36, 48]}]
+  }
+}
+```
+
+| 字段 | 类型 | 是否必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `id` | `string` | 否 | `None` | 稳定标识。 |
+| `type` | `string` | 是 | 无 | 组件 type。 |
+| `variant` | `string` | 否 | `default` | 主题默认样式变体。 |
+| `props` | `object` | 否 | `{}` | 组件内容数据。 |
+| `layout` | `object` | 否 | 当前内容区绝对 box | block 布局。 |
+| `style` | `object` | 否 | `{}` | 局部视觉覆盖，优先级高于主题默认值。 |
+| `visible` | `boolean` | 否 | `true` | 是否渲染。 |
+| `metadata` | `object` | 否 | `{}` | 扩展数据。 |
 
 ## Python API Guide
 
-推荐从 `ppt_ui` 包导入 namespace API：
-
 ```python
-from ppt_ui import Deck, chart, data, layout, narrative, slide, table
+from ppt_ui import Deck, chart, data, layout, page, table, theme
 
-deck = Deck(title="SlideForge Demo")
-deck.add_slide(slide.title(title="可复用 PPT UI 组件库", subtitle="Agent-driven PPT UI Framework"))
-deck.add_slide(
-    data.metric_cards(
-        title="核心指标概览",
-        cards=[
-            data.metric_card(label="准确率", value="92.3%", delta="+3.1%", note="较上期", icon="AC"),
-            data.metric_card(label="AUC", value="0.948", delta="+0.026", note="验证集", icon="AU"),
+deck = Deck(title="API Demo", theme=theme.tech_blue())
+deck.add_page(
+    page.standard(
+        title="Metrics And Trend",
+        subtitle="Multiple blocks on one page",
+        blocks=[
+            data.metric_cards(
+                cards=[
+                    data.metric_card(label="Accuracy", value="92.3%", delta="+3.1%", compare="vs previous", icon="AC"),
+                    data.metric_card(label="AUC", value="0.948", delta="+0.026", compare="validation", icon="AU")
+                ],
+                layout=layout.grid_item(col=1, span=4, row=1, row_span=2),
+            ),
+            chart.line(
+                categories=["4/29", "5/6", "5/13"],
+                series=[{"name": "Coverage", "values": [23, 36, 48]}],
+                layout=layout.grid_item(col=5, span=8, row=1, row_span=2),
+            ),
+            table.comparison(
+                headers=["Dimension", "A", "B"],
+                rows=[["Cost", "Low", "Medium"], ["Cycle", "4w", "6w"]],
+                conclusion="Recommend A for the MVP.",
+                layout=layout.grid_item(col=1, span=12, row=3, row_span=2),
+            ),
         ],
-    )
-)
-deck.add_slide(
-    chart.line(
-        title="趋势分析",
-        categories=["4/29", "5/6", "5/13"],
-        series=[{"name": "指标 A", "values": [320, 540, 580]}],
     )
 )
 deck.render("examples/api_demo.pptx")
 ```
 
-JSON 用户入口：
+当前 Python namespace：
 
-```python
-from ppt_ui.schema.parser import deck_from_json
-
-deck = deck_from_json("examples/sample_deck.json")
-deck.render("examples/demo.pptx")
-```
+| Namespace | 主要方法 |
+| --- | --- |
+| `page` / `slide` | `cover()`、`standard()`、`section()`、`blank()`、`closing()`、`qa()`。`slide` 是 `page` 的别名。 |
+| `layout` | `grid()`、`absolute()`、`grid_item()`、`box()`。 |
+| `block` | `component()`，用于自定义 type。 |
+| `basic` | `text()`。 |
+| `data` | `metric_card()` helper、`metric_cards()`、`progress()`。 |
+| `chart` | `line()`、`bar()`、`pie()`、`donut()`。 |
+| `table` | `comparison()`。 |
+| `narrative` | `timeline()`、`process_flow()`、`roadmap()`。 |
+| `media` | `icon()`、`image()`。 |
+| `master` | `tech_blue()`、`blank()`。 |
+| `theme` | `tech_blue()`、`glassmorphism()`、`claude()`、`glitch_art()`、`paper_cut()`、`neon_cyberpunk()`、`apple()`、`google()`。 |
 
 ## Component API
 
-### 组件状态总览
+### Implemented Types
 
-| Type | Python API | 状态 |
+| Type | Python API | 说明 |
 | --- | --- | --- |
-| `slide.title` | `slide.title(...)` | 已实现 |
-| `slide.section` | `slide.section(...)` | 已实现 |
-| `slide.content` | 无 | 计划支持 |
-| `slide.conclusion` | `slide.conclusion(...)` | 已实现 |
-| `slide.qa` | `slide.qa(...)` | 已实现 |
-| `layout.two_column` | `layout.two_column(...)` | 已实现 |
-| `layout.grid` | `layout.grid(...)` | 已实现 |
-| `layout.cards` | 无 | 计划支持 |
-| `layout.blank` | 无 | 计划支持 |
-| `data.metric_card` | `data.metric_card(...)` | 已实现，JSON 中会包装成单卡 slide |
-| `data.metric_cards` | `data.metric_cards(...)` | 已实现 |
-| `data.progress` | 无 | 计划支持 |
-| `data.progress_bars` | `data.progress_bars(...)` | 已实现 |
-| `data.gantt` | `data.gantt(...)` | 已实现 |
-| `chart.line` | `chart.line(...)` | 已实现 |
-| `chart.bar` | `chart.bar(...)` | 已实现 |
-| `chart.pie` | `chart.pie(...)` | 已实现 |
-| `chart.donut` | `chart.donut(...)` | 已实现 |
-| `table.basic` | 无 | 计划支持 |
-| `table.comparison` | `table.comparison(...)` | 已实现 |
-| `narrative.timeline` | `narrative.timeline(...)` | 已实现 |
-| `narrative.process_flow` | `narrative.process_flow(...)` | 已实现 |
-| `narrative.roadmap` | `narrative.roadmap(...)` | 已实现 |
-| `narrative.swot` | `narrative.swot(...)` | 已实现 |
-| `narrative.problem_solution` | `narrative.problem_solution(...)` | 已实现 |
-| `narrative.logic_pyramid` | `narrative.logic_pyramid(...)` | 已实现 |
-| `media.image` | 本地图片路径组件 | 已实现 |
-| `media.icon` | 远程 Iconify 兼容图标组件 | 已实现 |
-
-### slide.title
-
-功能：生成封面页。适用于报告封面、项目开场、答辩首页。
-
-```python
-deck.add_slide(slide.title(title="可复用 PPT UI 组件库", subtitle="适用于数据报告", presenter="SlideForge", date="2026.05.03"))
-```
-
-```json
-{"type": "slide.title", "title": "可复用 PPT UI 组件库", "subtitle": "适用于数据报告", "presenter": "SlideForge", "date": "2026.05.03", "logo": "YOUR LOGO"}
-```
-
-| 参数 | 类型 | 是否必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `type` | `string` | JSON 必填 | 无 | `slide.title` |
-| `title` | `string` | 是 | `""` | 主标题 |
-| `subtitle` | `string` | 否 | `""` | 副标题 |
-| `presenter` | `string` | 否 | `""` | 展示者 |
-| `date` | `string` | 否 | `""` | 日期文本 |
-| `logo` | `string` | 否 | `"YOUR LOGO"` | 左上角标识文本 |
-
-默认样式：白色背景、左侧蓝紫强调条、大标题、右侧轻量几何装饰、轻页脚。注意标题过长可能压缩显示。
-
-### slide.section
-
-功能：章节过渡页。适用于 deck 中的大章节分割。
-
-```python
-deck.add_slide(slide.section(number="01", title="基础布局组件", subtitle="快速搭建页面结构", keywords=["标题页", "双栏", "网格"]))
-```
-
-```json
-{"type": "slide.section", "number": "01", "title": "基础布局组件", "subtitle": "快速搭建页面结构", "keywords": ["标题页", "双栏", "网格"]}
-```
-
-| 参数 | 类型 | 是否必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `type` | `string` | JSON 必填 | 无 | `slide.section` |
-| `number` | `string` | 否 | `"01"` | 章节编号 |
-| `title` | `string` | 是 | `""` | 章节标题 |
-| `subtitle` | `string` | 否 | `""` | 章节说明 |
-| `keywords` | `array<string>` | 否 | `[]` | 关键词标签 |
-
-默认样式：大编号、章节标题、关键词 pill、轻量进度装饰。建议关键词 3-6 个。
-
-### slide.conclusion
-
-功能：结论与展望页。适用于总结页、项目收束页。
-
-```python
-deck.add_slide(slide.conclusion(points=[{"title": "组件复用", "description": "降低重复排版成本"}], closing="携手共进，共创未来！"))
-```
-
-```json
-{"type": "slide.conclusion", "title": "结论与展望", "points": [{"title": "组件复用", "description": "降低重复排版成本"}], "closing": "携手共进，共创未来！"}
-```
-
-| 参数 | 类型 | 是否必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `type` | `string` | JSON 必填 | 无 | `slide.conclusion` |
-| `title` | `string` | 否 | `"结论与展望"` | 页面标题 |
-| `points` | `array<object>` | 否 | `[]` | 结论卡片 |
-| `points[].title` | `string` | 是 | 无 | 卡片标题 |
-| `points[].description` | `string` | 是 | 无 | 卡片说明 |
-| `closing` | `string` | 否 | 内置文案 | 结束语 |
-
-默认样式：主渐变容器、三列结论卡、强调 closing。建议 `points` 2-3 个。
-
-### slide.qa
-
-功能：Q&A 结束页。适用于答疑、收尾页。
-
-```python
-deck.add_slide(slide.qa(project="SlideForge", description="欢迎交流组件设计、主题扩展与 Agent 生成链路"))
-```
-
-```json
-{"type": "slide.qa", "title": "Q&A", "subtitle": "感谢聆听，期待交流", "project": "SlideForge", "description": "欢迎交流组件设计、主题扩展与 Agent 生成链路"}
-```
-
-| 参数 | 类型 | 是否必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `type` | `string` | JSON 必填 | 无 | `slide.qa` |
-| `title` | `string` | 否 | `"Q&A"` | 主视觉文字 |
-| `subtitle` | `string` | 否 | 内置文案 | 副标题 |
-| `project` | `string` | 否 | `"SlideForge"` | 项目名 |
-| `description` | `string` | 否 | 内置文案 | 说明文字 |
-
-默认样式：居中大号 Q&A、项目名、说明卡片、轻装饰。建议保持简短。
-
-### layout.contents
-
-功能：目录页。适用于 deck 目录或章节导航。
-
-```python
-deck.add_slide(layout.contents(items=[{"number": "01", "title": "基础布局组件"}]))
-```
-
-```json
-{"type": "layout.contents", "title": "目录", "subtitle": "CONTENTS", "items": [{"number": "01", "title": "基础布局组件"}]}
-```
-
-| 参数 | 类型 | 是否必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `title` | `string` | 否 | `"目录"` | 页面标题 |
-| `subtitle` | `string` | 否 | `"CONTENTS"` | 副标题 |
-| `items` | `array<object>` | 是 | `[]` | 目录项 |
-| `items[].number` | `string` | 是 | 无 | 编号 |
-| `items[].title` | `string` | 是 | 无 | 目录标题 |
-
-默认样式：居中卡片列表、编号标签。建议 3-6 项。
-
-### layout.two_column
-
-功能：双栏内容页。适用于对比解释、左右结构说明。
-
-```python
-deck.add_slide(layout.two_column(title="双栏说明", left_title="为什么需要", left_items=["语义化输入"], right_title="第一阶段能力", right_items=["JSON 到 PPTX"]))
-```
-
-```json
-{"type": "layout.two_column", "title": "双栏说明", "left_title": "为什么需要", "left_items": ["语义化输入"], "right_title": "第一阶段能力", "right_items": ["JSON 到 PPTX"]}
-```
-
-| 参数 | 类型 | 是否必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `title` | `string` | 是 | `""` | 页面标题 |
-| `left_title` | `string` | 是 | `""` | 左栏标题 |
-| `left_items` | `array<string>` | 是 | `[]` | 左栏要点 |
-| `right_title` | `string` | 是 | `""` | 右栏标题 |
-| `right_items` | `array<string>` | 是 | `[]` | 右栏要点 |
-
-默认样式：两张轻量卡片、编号标签、bullet 列表。建议每栏 3-5 点。
-
-### layout.grid
-
-功能：网格化信息卡。适用于能力矩阵、模块列表、规则说明。
-
-```python
-deck.add_slide(layout.grid(title="网格布局", columns=3, items=[{"title": "Title", "description": "统一标题区", "icon": "T"}]))
-```
-
-```json
-{"type": "layout.grid", "title": "网格布局", "columns": 3, "items": [{"title": "Title", "description": "统一标题区", "icon": "T"}]}
-```
-
-| 参数 | 类型 | 是否必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `title` | `string` | 是 | `""` | 页面标题 |
-| `subtitle` | `string` | 否 | 内置文案 | 副标题 |
-| `columns` | `integer` | 否 | `3` | 列数 |
-| `items` | `array<object>` | 是 | `[]` | 网格项 |
-| `items[].title` | `string` | 是 | 无 | 卡片标题 |
-| `items[].description` | `string` | 否 | `""` | 卡片说明 |
-| `items[].icon` | `string` | 否 | `""` | 文本图标占位 |
-
-默认样式：浅色卡片、圆形 icon 占位。注意 `columns` 过大时内容会拥挤。
-
-### layout.image_text
-
-功能：图文混排页。当前是视觉占位，不会加载真实图片。适用于说明型页面。
-
-```python
-deck.add_slide(layout.image_text(title="图文混排", image_label="Visual", body="核心观点", bullets=["左文右图"], image_side="right"))
-```
-
-```json
-{"type": "layout.image_text", "title": "图文混排", "image_label": "Visual", "body": "核心观点", "bullets": ["左文右图"], "image_side": "right"}
-```
-
-| 参数 | 类型 | 是否必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `title` | `string` | 是 | `""` | 页面标题 |
-| `subtitle` | `string` | 否 | 内置文案 | 副标题 |
-| `image_label` | `string` | 否 | `"Image"` | 图片占位文本 |
-| `body` | `string` | 否 | `""` | 正文 |
-| `bullets` | `array<string>` | 否 | `[]` | 要点 |
-| `image_side` | `string` | 否 | `"right"` | `left` 或 `right` |
-
-默认样式：一侧卡片模拟图片容器，一侧正文卡。真实图片插入属于 `media.image` 计划支持。
-
-### layout.three_info_cards
-
-功能：三栏信息卡。适用于三类能力、价值、模块说明。
-
-```python
-deck.add_slide(layout.three_info_cards(title="三栏信息卡", cards=[{"title": "产品能力", "description": "提升效率", "icon": "P"}]))
-```
-
-```json
-{"type": "layout.three_info_cards", "title": "三栏信息卡", "cards": [{"title": "产品能力", "description": "提升效率", "icon": "P"}]}
-```
-
-| 参数 | 类型 | 是否必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `title` | `string` | 是 | `""` | 页面标题 |
-| `subtitle` | `string` | 否 | 内置文案 | 副标题 |
-| `cards` | `array<object>` | 是 | `[]` | 卡片列表 |
-| `cards[].title` | `string` | 是 | 无 | 卡片标题 |
-| `cards[].description` | `string` | 是 | 无 | 卡片说明 |
-| `cards[].icon` | `string` | 否 | `""` | 图标占位文本 |
-
-默认样式：三列浅色卡、圆形 icon 占位。建议 3 张卡。
-
-### layout.quote
-
-功能：引用说明块。适用于观点强调、章节过渡、专家引用。
-
-```python
-deck.add_slide(layout.quote(title="引用说明块", quote="技术的价值在于让业务更简单。", source="SlideForge"))
-```
-
-```json
-{"type": "layout.quote", "title": "引用说明块", "quote": "技术的价值在于让业务更简单。", "source": "SlideForge"}
-```
-
-| 参数 | 类型 | 是否必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `title` | `string` | 是 | `""` | 页面标题 |
-| `subtitle` | `string` | 否 | 内置文案 | 副标题 |
-| `quote` | `string` | 是 | `""` | 引用正文 |
-| `source` | `string` | 否 | `""` | 来源 |
-
-默认样式：居中引用卡、强调引号。建议引用不超过两行。
-
-### layout.header_footer
-
-功能：页眉页脚占位规范页。适用于展示模板规则或占位页面。
-
-```python
-deck.add_slide(layout.header_footer(title="页眉页脚", section="02", body="页面内容区域", page="/ 12"))
-```
-
-```json
-{"type": "layout.header_footer", "title": "页眉页脚", "section": "02", "body": "页面内容区域", "source": "数据来源：内部数据", "page": "/ 12"}
-```
-
-| 参数 | 类型 | 是否必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `title` | `string` | 是 | `""` | 页面标题 |
-| `section` | `string` | 否 | `"01"` | 右上角章节标签 |
-| `body` | `string` | 否 | 内置文案 | 内容区占位 |
-| `source` | `string` | 否 | 内置文案 | 来源文本 |
-| `page` | `string` | 否 | `"/ 12"` | 页码文本 |
-| `subtitle` | `string` | 否 | 内置文案 | 副标题 |
-
-默认样式：标题区、内容框、来源和页码。当前不是自动页码。
-
-### layout.design_spec
-
-功能：设计规范展示页。适用于展示 token、组件规范、设计系统规则。
-
-```python
-deck.add_slide(layout.design_spec(specs=["标题", "正文", "强调色", "留白", "圆角", "阴影"]))
-```
-
-```json
-{"type": "layout.design_spec", "title": "设计规范", "specs": ["标题", "正文", "强调色", "留白", "圆角", "阴影"]}
-```
-
-| 参数 | 类型 | 是否必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `title` | `string` | 否 | `"设计规范"` | 页面标题 |
-| `subtitle` | `string` | 否 | 内置文案 | 副标题 |
-| `specs` | `array<string>` | 是 | `[]` | 规范条目 |
-
-默认样式：2x3 规范网格。建议 4-6 项。
-
-### data.metric_card
-
-功能：单张指标卡。Python API 返回块级 `MetricCard`；JSON 中 `data.metric_card` 会被 parser 包装成包含一张卡的 `MetricCardsSlide`。
-
-```python
-card = data.metric_card(label="准确率", value="92.3%", delta="+3.1%", note="较上期", icon="AC")
-```
-
-```json
-{"type": "data.metric_card", "title": "单指标", "label": "准确率", "value": "92.3%", "delta": "+3.1%", "note": "较上期", "icon": "AC"}
-```
-
-| 参数 | 类型 | 是否必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `label` | `string` | 是 | 无 | 指标名称 |
-| `value` | `string` | 是 | 无 | 主数值 |
-| `delta` | `string` | 否 | `""` | 变化值；以 `+` 开头显示成功色，否则警示色 |
-| `note` | `string` | 否 | `"较上期"` | 对比说明 |
-| `icon` | `string` | 否 | `""` | 文本图标占位 |
-
-默认样式：轻量圆角卡片、右上 icon、主数值和 delta。注意 JSON 写法需要 `title` 才能形成完整 slide 标题。
-
-### data.metric_cards
-
-功能：指标卡组。适用于实验结果摘要、运营指标概览、商业复盘、周报总览。
-
-```python
-deck.add_slide(data.metric_cards(title="核心指标概览", cards=[data.metric_card(label="AUC", value="0.948")]))
-```
-
-```json
-{"type": "data.metric_cards", "title": "核心指标概览", "subtitle": "适合数据报告", "scenarios": "实验结果摘要 / 运营指标概览", "cards": [{"label": "准确率", "value": "92.3%", "delta": "+3.1%", "note": "较上期", "icon": "AC"}]}
-```
-
-| 参数 | 类型 | 是否必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `title` | `string` | 是 | `""` | 页面标题 |
-| `subtitle` | `string` | 否 | `""` | 副标题 |
-| `scenarios` | `string` | 否 | 内置场景文案 | 下方说明 |
-| `cards` | `array<object>` | 是 | `[]` | 指标卡 |
-| `cards[].label` | `string` | 是 | 无 | 指标名称 |
-| `cards[].value` | `string` | 是 | 无 | 主数值 |
-| `cards[].delta` | `string` | 否 | `""` | 变化值 |
-| `cards[].note` | `string` | 否 | `"较上期"` | 对比说明 |
-| `cards[].icon` | `string` | 否 | `""` | 图标占位 |
-
-默认样式：横向指标卡 + 说明区域。建议 2-4 张卡。
-
-### data.progress_bars
-
-功能：进度条组。适用于项目进度、完成率、阶段健康度。
-
-```python
-deck.add_slide(data.progress_bars(title="项目推进进度", items=[{"label": "开发实现", "value": 0.6, "color": "7C3AED"}]))
-```
-
-```json
-{"type": "data.progress_bars", "title": "项目推进进度", "items": [{"label": "开发实现", "value": 0.6, "color": "7C3AED"}]}
-```
-
-| 参数 | 类型 | 是否必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `title` | `string` | 是 | `""` | 页面标题 |
-| `subtitle` | `string` | 否 | 内置文案 | 副标题 |
-| `items` | `array<object>` | 是 | `[]` | 进度项 |
-| `items[].label` | `string` | 是 | 无 | 名称 |
-| `items[].value` | `number` | 是 | 无 | 0-1 之间，渲染时会裁剪 |
-| `items[].color` | `string` | 否 | 主题主色 | HEX 颜色 |
-
-默认样式：卡片容器、浅色轨道、彩色进度。`data.progress` 是计划支持别名。
-
-### data.gantt
-
-功能：甘特图。适用于排期、交付节奏、任务计划。
-
-```python
-deck.add_slide(data.gantt(title="项目计划", periods=["5月", "6月"], tasks=[{"label": "设计", "start": 0, "end": 1}]))
-```
-
-```json
-{"type": "data.gantt", "title": "项目计划", "periods": ["5月", "6月"], "tasks": [{"label": "设计", "start": 0, "end": 1, "color": "2563EB"}]}
-```
-
-| 参数 | 类型 | 是否必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `periods` | `array<string>` | 是 | `[]` | 时间列 |
-| `tasks` | `array<object>` | 是 | `[]` | 任务 |
-| `tasks[].label` | `string` | 是 | 无 | 任务名 |
-| `tasks[].start` | `integer` | 是 | 无 | 起始列索引 |
-| `tasks[].end` | `integer` | 是 | 无 | 结束列索引 |
-| `tasks[].color` | `string` | 否 | 自动颜色 | HEX 颜色 |
-
-默认样式：轻量表格背景和彩色时间条。注意 `start/end` 是列索引，不是日期解析。
-
-### data.heatmap
-
-功能：热力矩阵。适用于功能使用、群体行为、场景热度。
-
-```python
-deck.add_slide(data.heatmap(title="使用热力", row_labels=["新客"], col_labels=["功能A"], values=[[68]]))
-```
-
-```json
-{"type": "data.heatmap", "title": "使用热力", "row_labels": ["新客"], "col_labels": ["功能A"], "values": [[68]]}
-```
-
-| 参数 | 类型 | 是否必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `row_labels` | `array<string>` | 是 | `[]` | 行标签 |
-| `col_labels` | `array<string>` | 是 | `[]` | 列标签 |
-| `values` | `array<array<number>>` | 是 | `[]` | 数值矩阵 |
-
-默认样式：根据数值映射浅灰、浅蓝、主蓝。注意矩阵行列不匹配时缺失值按 0 处理。
-
-### data.ab_comparison
-
-功能：A/B 实验结果对比。适用于实验汇报和版本差异说明。
-
-```python
-deck.add_slide(data.ab_comparison(title="实验结果", headers=["指标", "A", "B"], rows=[["CTR", "4.1%", "4.8%"]], note="B 更优"))
-```
-
-```json
-{"type": "data.ab_comparison", "title": "实验结果", "headers": ["指标", "A", "B"], "rows": [["CTR", "4.1%", "4.8%"]], "note": "B 更优"}
-```
-
-| 参数 | 类型 | 是否必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `headers` | `array<string>` | 是 | `[]` | 表头 |
-| `rows` | `array<array<string>>` | 是 | `[]` | 表格行 |
-| `note` | `string` | 否 | `""` | 下方结论说明 |
-
-默认样式：调用统一 `add_table()`，note 使用成功色提示。注意每行列数最好与表头一致。
-
-### data.highlight_insight
-
-功能：高亮结论框。适用于突出关键洞察、原因和下一步。
-
-```python
-deck.add_slide(data.highlight_insight(title="核心结论", summary="转化率提升 24%", bullets=["版本 B 更优"], next_step="继续优化链路"))
-```
-
-```json
-{"type": "data.highlight_insight", "title": "核心结论", "summary": "转化率提升 24%", "bullets": ["版本 B 更优"], "next_step": "继续优化链路"}
-```
-
-| 参数 | 类型 | 是否必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `summary` | `string` | 是 | `""` | 主结论 |
-| `bullets` | `array<string>` | 否 | `[]` | 支撑要点 |
-| `next_step` | `string` | 否 | `""` | 下一步 |
-
-默认样式：主色浅背景卡、bullet 列表、底部 next step。建议 summary 不超过两行。
-
-### data.annotations
-
-功能：数据注释列表。适用于异常说明、关键事件、背景补充。
-
-```python
-deck.add_slide(data.annotations(title="数据注释", annotations=["5/13 活动上线"], note="已去除异常值"))
-```
-
-```json
-{"type": "data.annotations", "title": "数据注释", "annotations": ["5/13 活动上线"], "note": "已去除异常值"}
-```
-
-| 参数 | 类型 | 是否必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `annotations` | `array<string>` | 是 | `[]` | 注释列表 |
-| `note` | `string` | 否 | `""` | 底部备注 |
-
-默认样式：编号标签 + 注释行。建议 2-5 条。
-
-### chart.line
-
-功能：折线图。适用于趋势、实验曲线、阶段性变化。
-
-```python
-deck.add_slide(chart.line(title="趋势分析", categories=["4/29", "5/6"], series=[{"name": "指标 A", "values": [320, 540]}]))
-```
-
-```json
-{"type": "chart.line", "title": "趋势分析", "categories": ["4/29", "5/6"], "series": [{"name": "指标 A", "values": [320, 540], "color": "2563EB"}]}
-```
-
-| 参数 | 类型 | 是否必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `categories` | `array<string>` | 是 | `[]` | X 轴分类 |
-| `series` | `array<object>` | 是 | `[]` | 数据系列 |
-| `series[].name` | `string` | 是 | 无 | 系列名 |
-| `series[].values` | `array<number>` | 是 | 无 | 数值 |
-| `series[].color` | `string` | 否 | 自动颜色 | HEX 颜色 |
-| `subtitle` | `string` | 否 | 内置文案 | 副标题 |
-
-默认样式：自绘折线和图例。注意 series 长度与 categories 最好一致。
-
-### chart.bar
-
-功能：柱状图。适用于分类对比、排行、版本差异。
-
-```python
-deck.add_slide(chart.bar(title="渠道转化", categories=["APP"], series=[{"name": "转化数", "values": [680]}]))
-```
-
-```json
-{"type": "chart.bar", "title": "渠道转化", "categories": ["APP"], "series": [{"name": "转化数", "values": [680]}]}
-```
-
-| 参数 | 类型 | 是否必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `categories` | `array<string>` | 是 | `[]` | X 轴分类 |
-| `series` | `array<object>` | 是 | `[]` | 数据系列 |
-| `series[].name` | `string` | 是 | 无 | 系列名 |
-| `series[].values` | `array<number>` | 是 | 无 | 数值 |
-| `series[].color` | `string` | 否 | 自动颜色 | HEX 颜色 |
-
-默认样式：自绘分组柱和网格线。缺失 series value 会按 0 渲染。
-
-### chart.pie
-
-功能：饼图。适用于占比、来源分布、结构组成。
-
-```python
-deck.add_slide(chart.pie(title="渠道占比", segments=[{"label": "产品 A", "value": 42}]))
-```
-
-```json
-{"type": "chart.pie", "title": "渠道占比", "segments": [{"label": "产品 A", "value": 42, "color": "2563EB"}]}
-```
-
-| 参数 | 类型 | 是否必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `segments` | `array<object>` | 是 | `[]` | 扇区 |
-| `segments[].label` | `string` | 是 | 无 | 名称 |
-| `segments[].value` | `number` | 是 | 无 | 数值 |
-| `segments[].color` | `string` | 否 | 自动颜色 | HEX 颜色 |
-
-默认样式：使用 `python-pptx` 图表对象，右侧图例显示百分比。输出可编辑。
-
-### chart.donut
-
-功能：环形图。适用于占比和总量突出展示。
-
-```python
-deck.add_slide(chart.donut(title="流量来源", center_label="总计", center_value="56,780", segments=[{"label": "自然搜索", "value": 38.6}]))
-```
-
-```json
-{"type": "chart.donut", "title": "流量来源", "center_label": "总计", "center_value": "56,780", "segments": [{"label": "自然搜索", "value": 38.6}]}
-```
-
-| 参数 | 类型 | 是否必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `segments` | `array<object>` | 是 | `[]` | 环形图扇区 |
-| `segments[].label` | `string` | 是 | 无 | 名称 |
-| `segments[].value` | `number` | 是 | 无 | 数值 |
-| `segments[].color` | `string` | 否 | 自动颜色 | HEX 颜色 |
-| `center_label` | `string` | 否 | `"总计"` | 中心标签 |
-| `center_value` | `string` | 否 | `""` | 中心数值 |
-
-默认样式：可编辑 doughnut chart + 中心文本 + 右侧百分比列表。
-
-### table.comparison
-
-功能：方案对比表。适用于多方案、多维度比较和推荐结论。
-
-```python
-deck.add_slide(table.comparison(title="对比分析", headers=["维度", "方案 A", "方案 B"], rows=[["成本", "中", "低"]], conclusion="优先推荐方案 A。"))
-```
-
-```json
-{"type": "table.comparison", "title": "对比分析", "headers": ["维度", "方案 A", "方案 B"], "rows": [["成本", "中", "低"]], "conclusion": "优先推荐方案 A。"}
-```
-
-| 参数 | 类型 | 是否必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `headers` | `array<string>` | 是 | `[]` | 表头 |
-| `rows` | `array<array<string>>` | 是 | `[]` | 表格行 |
-| `conclusion` | `string` | 否 | 内置推荐文案 | 表格下方结论 |
-
-默认样式：浅边框卡片、蓝色表头、轻分隔线、最后短文本可渲染为推荐标签。
-
-### narrative.timeline
-
-功能：状态时间轴。适用于项目阶段、研发计划、交付节奏。
-
-```python
-deck.add_slide(narrative.timeline(title="项目时间轴", items=[{"label": "需求调研", "date": "2026.05", "description": "明确范围", "status": "done"}]))
-```
-
-```json
-{"type": "narrative.timeline", "title": "项目时间轴", "items": [{"label": "需求调研", "date": "2026.05", "description": "明确范围", "status": "done"}]}
-```
-
-| 参数 | 类型 | 是否必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `items` | `array<object>` | 是 | `[]` | 时间轴节点 |
-| `items[].label` | `string` | 是 | 无 | 阶段名 |
-| `items[].date` | `string` | 否 | `""` | 时间 |
-| `items[].description` | `string` | 否 | `""` | 简短说明 |
-| `items[].status` | `string` | 否 | `"normal"` | `done`、`active` 或其他 |
-
-默认样式：`done` 蓝色实心、`active` 紫色高亮、普通节点灰色。建议 4-6 个节点。
-
-### narrative.process_flow
-
-功能：流程图。适用于实施流程、工作流、生成链路。
-
-```python
-deck.add_slide(narrative.process_flow(title="实施流程", steps=[{"title": "需求分析", "description": "明确目标", "output": "需求清单"}]))
-```
-
-```json
-{"type": "narrative.process_flow", "title": "实施流程", "steps": [{"title": "需求分析", "description": "明确目标", "output": "需求清单"}]}
-```
-
-| 参数 | 类型 | 是否必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `steps` | `array<object>` | 是 | `[]` | 流程步骤 |
-| `steps[].title` | `string` | 是 | 无 | 阶段名称 |
-| `steps[].description` | `string` | 否 | `""` | 一行说明 |
-| `steps[].output` | `string` | 否 | `""` | 产出物 |
-
-默认样式：横向流程卡 + 轻箭头 + 下方链路说明。建议 4-5 步。
-
-### narrative.roadmap
-
-功能：路线图。适用于季度计划、能力建设节奏。
-
-```python
-deck.add_slide(narrative.roadmap(title="路线图", periods=["Q1", "Q2"], rows=[{"label": "产品能力", "start": 0, "end": 2}]))
-```
-
-```json
-{"type": "narrative.roadmap", "title": "路线图", "periods": ["Q1", "Q2"], "rows": [{"label": "产品能力", "start": 0, "end": 2, "color": "2563EB"}]}
-```
-
-| 参数 | 类型 | 是否必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `periods` | `array<string>` | 是 | `[]` | 阶段列 |
-| `rows` | `array<object>` | 是 | `[]` | 路线条 |
-| `rows[].label` | `string` | 是 | 无 | 行名称 |
-| `rows[].start` | `integer` | 是 | 无 | 起始列索引 |
-| `rows[].end` | `integer` | 是 | 无 | 结束列索引 |
-| `rows[].color` | `string` | 否 | 自动颜色 | HEX 颜色 |
-
-默认样式：时间头、横向路线条。注意索引范围应与 `periods` 长度匹配。
-
-### narrative.swot
-
-功能：SWOT 四象限。适用于战略分析、方案评估、复盘讨论。
-
-```python
-deck.add_slide(narrative.swot(title="SWOT", quadrants=[{"title": "优势", "subtitle": "Strengths", "items": ["组件丰富"]}]))
-```
-
-```json
-{"type": "narrative.swot", "title": "SWOT", "quadrants": [{"title": "优势", "subtitle": "Strengths", "items": ["组件丰富"]}]}
-```
-
-| 参数 | 类型 | 是否必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `quadrants` | `array<object>` | 是 | `[]` | 象限，建议 4 个 |
-| `quadrants[].title` | `string` | 是 | 无 | 象限标题 |
-| `quadrants[].subtitle` | `string` | 否 | `""` | 副标题 |
-| `quadrants[].items` | `array<string>` | 否 | `[]` | 要点 |
-
-默认样式：2x2 浅色卡片 + 中心 SWOT 圆标。
-
-### narrative.problem_solution
-
-功能：问题到对策映射。适用于诊断和行动建议。
-
-```python
-deck.add_slide(narrative.problem_solution(title="问题-对策", pairs=[{"problem": "转化率低", "solution": "优化路径"}]))
-```
-
-```json
-{"type": "narrative.problem_solution", "title": "问题-对策", "pairs": [{"problem": "转化率低", "solution": "优化路径"}]}
-```
-
-| 参数 | 类型 | 是否必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `pairs` | `array<object>` | 是 | `[]` | 问题-对策列表 |
-| `pairs[].problem` | `string` | 是 | 无 | 问题 |
-| `pairs[].solution` | `string` | 是 | 无 | 对策 |
-
-默认样式：左右两列表格、箭头连接。建议 3-5 行。
-
-### narrative.logic_pyramid
-
-功能：逻辑金字塔。适用于结论、论点、论据和支撑材料表达。
-
-```python
-deck.add_slide(narrative.logic_pyramid(title="逻辑金字塔", levels=[{"label": "结论"}], side_notes=["核心观点"]))
-```
-
-```json
-{"type": "narrative.logic_pyramid", "title": "逻辑金字塔", "levels": [{"label": "结论", "note": ""}], "side_notes": ["核心观点"]}
-```
-
-| 参数 | 类型 | 是否必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `levels` | `array<object>` | 是 | `[]` | 金字塔层级，最多渲染前 4 层 |
-| `levels[].label` | `string` | 是 | 无 | 层级文本 |
-| `levels[].note` | `string` | 否 | `""` | 当前渲染未使用 |
-| `side_notes` | `array<string>` | 否 | `[]` | 右侧注释 |
-
-默认样式：蓝紫梯形感矩形层级和右侧说明。建议 3-4 层。
-
-### narrative.risk_table
-
-功能：风险提示表。适用于风险识别、影响程度和应对建议。
-
-```python
-deck.add_slide(narrative.risk_table(title="风险提示", risks=[{"category": "市场风险", "impact": "高", "suggestion": "强化差异化"}]))
-```
-
-```json
-{"type": "narrative.risk_table", "title": "风险提示", "risks": [{"category": "市场风险", "impact": "高", "suggestion": "强化差异化"}]}
-```
-
-| 参数 | 类型 | 是否必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `risks` | `array<object>` | 是 | `[]` | 风险列表 |
-| `risks[].category` | `string` | 是 | 无 | 风险类别 |
-| `risks[].impact` | `string` | 是 | 无 | 影响程度 |
-| `risks[].suggestion` | `string` | 是 | 无 | 建议 |
-
-默认样式：统一表格组件。建议 3-5 行。
-
-### narrative.milestone
-
-功能：里程碑时间轴。当前复用 `TimelineSlide` 渲染。
-
-```python
-deck.add_slide(narrative.milestone(title="里程碑", items=[{"label": "开发完成", "date": "2026.03", "status": "active"}]))
-```
-
-```json
-{"type": "narrative.milestone", "title": "里程碑", "items": [{"label": "开发完成", "date": "2026.03", "description": "核心交付", "status": "active"}]}
-```
-
-| 参数 | 类型 | 是否必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `items` | `array<object>` | 是 | `[]` | 同 `narrative.timeline.items` |
-
-默认样式和注意事项同 `narrative.timeline`。
-
-### narrative.relation_table
-
-功能：行动项关系表。适用于负责人、优先级、进度和状态管理。
-
-```python
-deck.add_slide(narrative.relation_table(title="行动项", rows=[{"action": "优化功能", "owner": "张三", "priority": "高", "due": "2026-03-15", "progress": "70%", "status": "进行中"}]))
-```
-
-```json
-{"type": "narrative.relation_table", "title": "行动项", "rows": [{"action": "优化功能", "owner": "张三", "priority": "高", "due": "2026-03-15", "progress": "70%", "status": "进行中"}]}
-```
-
-| 参数 | 类型 | 是否必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `rows[].action` | `string` | 是 | 无 | 行动项 |
-| `rows[].owner` | `string` | 是 | 无 | 负责人 |
-| `rows[].priority` | `string` | 是 | 无 | 优先级 |
-| `rows[].due` | `string` | 是 | 无 | 截止时间 |
-| `rows[].progress` | `string` | 是 | 无 | 当前进度 |
-| `rows[].status` | `string` | 是 | 无 | 状态 |
-
-默认样式：宽表格。列较多，建议文本短。
-
-### narrative.story_structure
-
-功能：叙事结构建议。适用于背景、问题、方法、结果、结论的纵向结构。
-
-```python
-deck.add_slide(narrative.story_structure(title="叙事结构", steps=[{"title": "背景", "description": "阐述目标", "icon": "B"}]))
-```
-
-```json
-{"type": "narrative.story_structure", "title": "叙事结构", "steps": [{"title": "背景", "description": "阐述目标", "icon": "B"}]}
-```
-
-| 参数 | 类型 | 是否必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `steps` | `array<object>` | 是 | `[]` | 叙事步骤 |
-| `steps[].title` | `string` | 是 | 无 | 步骤标题 |
-| `steps[].description` | `string` | 是 | 无 | 步骤说明 |
-| `steps[].icon` | `string` | 否 | `""` | 文本图标占位 |
-
-默认样式：右侧纵向卡片链。建议 4-5 步。
-
-### media 与基础组件
-
-`media.icon` 当前支持 `lucide.sparkles`、`heroicons.bolt`、`remix.rocket-line`、`tabler.file-code`、`fa.user`、`bootstrap.chat-left-text` 等前端式命名。`ppt_ui/icons/provider.py` 会把点号语法规范化为 Iconify 兼容 ID，通过默认 `IconifyApiProvider` 获取远程 SVG，并由渲染层使用 `resvg-py` 转为透明 PNG 后插入 PPTX。
-
-| Type | 当前状态 | 说明 |
+| `basic.text` | `basic.text(...)` | 文本或 bullet 列表。 |
+| `data.metric_cards` | `data.metric_cards(...)` | 一组指标卡。 |
+| `data.progress` | `data.progress(...)` | 进度条列表。 |
+| `chart.line` | `chart.line(...)` | 可编辑 shape 折线图。 |
+| `chart.bar` | `chart.bar(...)` | 可编辑 shape 柱状图。 |
+| `chart.pie` | `chart.pie(...)` | 原生 PowerPoint 饼图。 |
+| `chart.donut` | `chart.donut(...)` | 原生 PowerPoint 环形图。 |
+| `table.comparison` | `table.comparison(...)` | 对比表。 |
+| `table.basic` | `block.component("table.basic", ...)` | 当前复用对比表组件实现。 |
+| `narrative.timeline` | `narrative.timeline(...)` | 状态时间轴。 |
+| `narrative.process_flow` | `narrative.process_flow(...)` | 流程步骤卡。 |
+| `narrative.roadmap` | `narrative.roadmap(...)` | 路线图条形列表。 |
+| `media.icon` | `media.icon(...)` | Iconify、URL、本地 SVG 或 fallback icon 卡。 |
+| `media.image` | `media.image(...)` | 图片块。 |
+
+`data.metric_card` 是 Python helper，用于生成 `data.metric_cards.cards[]` 中的单张卡数据；它不是独立 JSON component type。
+
+### Common Component Props
+
+| Type | Props |
+| --- | --- |
+| `basic.text` | `text`、`bullets`、`size`、`color`、`bold`、`align`、`valign`。 |
+| `data.metric_cards` | `cards[]`，每项支持 `label`、`value`、`delta`、`compare`/`note`、`icon`。 |
+| `data.progress` | `items[]`，每项支持 `label`、`value`。 |
+| `chart.line` / `chart.bar` | `categories[]`、`series[]`，series 项支持 `name`、`values[]`、可选 `color`。 |
+| `chart.pie` / `chart.donut` | `labels[]` 或 `categories[]`，`values[]` 或 `data[]`。 |
+| `table.comparison` / `table.basic` | `headers[]`、`rows[][]`、`conclusion`。 |
+| `narrative.timeline` | `items[]`，每项常用 `title`、`date`、`description`、`status`。 |
+| `narrative.process_flow` | `steps[]` 或 `items[]`，每项常用 `title`、`description`、`output`。 |
+| `narrative.roadmap` | `items[]`，每项常用 `label`、`value`、`status`。 |
+| `media.icon` | `name`、`label`、`source`、`description`、`src`、`color`、`size`、`width`、`height`、`rotate`、`flip`、`stroke_width`/`strokeWidth`、`opacity`。 |
+| `media.image` | `src`、`fit`，`fit` 支持 `contain` 或 `cover`。 |
+
+## Theme System
+
+内置主题全部是 JSON 文件，位于 `ppt_ui/themes/`。Python 代码只注册主题名并通过 `ThemeLoader` 加载文件。
+
+当前内置主题：
+
+| Theme | Primary | Accent | Background | Font | 风格 |
+| --- | --- | --- | --- | --- | --- |
+| `theme.tech_blue` | `#2563EB` | `#7C3AED` | `#FFFFFF` | `Microsoft YaHei` | 默认蓝紫科技风。 |
+| `theme.glassmorphism` | `#6366F1` | `#A855F7` | `#E8EEFF` | `Segoe UI` | 玻璃拟态、渐变背景、轻透明卡片。 |
+| `theme.claude` | `#B8651B` | `#B8651B` | `#F2ECE2` | `Noto Serif SC` | 暖色纸张、衬线字体、克制线条、方法论表达。 |
+| `theme.glitch_art` | `#00FFFF` | `#FF00FF` | `#0A0A0A` | `Consolas` | 深色扫描线、霓虹对比、实验视觉。 |
+| `theme.paper_cut` | `#2C3E50` | `#E74C3C` | `#F0F0F0` | `Georgia` | 剪纸层叠、强阴影、插画感。 |
+| `theme.neon_cyberpunk` | `#00FF41` | `#00D4FF` | `#0B0E1A` | `Consolas` | 深色网格、霓虹边框、HUD 风格。 |
+| `theme.apple` | `#0071E3` | `#FF375F` | `#F5F5F7` | `SF Pro Display` | 极简、浅灰背景、大圆角、弱边框。 |
+| `theme.google` | `#1A73E8` | `#EA4335` | `#E8F0FE` | `Google Sans` | Google Material 风格、多色 palette。 |
+
+兼容别名：`default`、`default_blue`、`theme.default_blue`、`tech_blue` 和 `theme.tech_blue` 都会解析到 Tech Blue。
+
+### Theme Sources
+
+| 来源 | 示例 | 状态 |
 | --- | --- | --- |
-| `media.image` | 已实现 | 本地图片插入，支持 contain/stretch 行为 |
-| `media.icon` | 已实现 | 远程 Iconify 兼容图库、本地 `src` 透明 PNG、离线文字 fallback |
+| 内置主题 | `"theme.claude"` | 已实现 |
+| 内置别名 | `"default"` | 已实现 |
+| 外部单文件 JSON | `"./themes/company_blue.json"` | 已实现 |
+| 外部目录主题 | `"./themes/company_modular"` | 已实现，目录下读取 `theme.json` |
+| Inline dict | `{ "name": "custom", "extends": "theme.tech_blue" }` | 已实现 |
+| 直接 `Theme` 对象 | `Deck(theme=my_theme)` | 已实现 |
+
+### Theme JSON Fields
+
+主题支持扁平字段和分组字段。扁平字段如 `primary`、`font_family`、`page_margin` 会映射到对应 token；也可以写成 `tokens.colors.primary`、`tokens.fonts.family`。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `name` | `string` | 主题名。 |
+| `extends` | `string/path` | 继承内置主题、外部文件或目录主题。 |
+| `metadata` | `object` | `display_name`、`suitable_for`、`visual_features` 等说明性数据。 |
+| `slide_width` / `slide_height` | `float` | 页面尺寸，单位 inch。 |
+| `tokens` | `object/string/list` | token 片段，可 inline 或引用外部 JSON。 |
+| `colors` | `object` | 颜色 token。 |
+| `fonts` | `object` | 字体和字号 token。 |
+| `spacing` | `object` | 间距 token。 |
+| `radius` / `radius_tokens` | `object` | 圆角 token。 |
+| `shadow` | `object` | 阴影 token，支持 fallback offset 和 native shadow blur。 |
+| `chart_palette` | `list[str]` | 图表色板。 |
+| `card_shadow` | `boolean` | 是否启用卡片阴影。 |
+| `gradient` | `object` | 背景渐变，支持 `stops[]` 和 `angle`。 |
+| `background_pattern` | `string` | 当前 renderer 支持 `scanlines`、`grid`。 |
+| `decorations` | `object` | 主题装饰 token，例如 `accent_bar_width`、`footer_line_width`、`footer_line_lengths`、`card_radius`、`card_top_border`。 |
+| `components` | `object/string/list` | 组件默认 style，可用于 `component_default_style()`。 |
+| `component_styles` | `object/string/list` | 组件样式 token，会转成 `ComponentStyle`。 |
+
+### Token Fields
+
+| Token Group | 字段 |
+| --- | --- |
+| `ColorTokens` | `background`、`surface`、`surface_alt`、`surface_white`、`primary`、`primary_dark`、`primary_soft`、`primary_tint`、`accent`、`accent_soft`、`accent_tint`、`secondary`、`success`、`success_soft`、`warning`、`warning_soft`、`danger`、`text_primary`、`text_secondary`、`text_tertiary`、`border`、`border_light`、`gray_50`、`gray_100`、`gray_200`、`gray_700`、`shadow_light`、`shadow_card`。 |
+| `FontTokens` | `family`、`title_font`、`mono_font`、`latin_font`、`caption_font`、`title_size`、`subtitle_size`、`h1_size`、`h2_size`、`body_size`、`caption_size`、`tiny_size`、`display_size`。 |
+| `SpacingTokens` | `base`、`xs`、`sm`、`md`、`lg`、`xl`、`page_margin`、`page_x`、`page_y`、`title_top`、`content_top`、`footer_y`、`gutter`、`card_padding`。 |
+| `RadiusTokens` | `sm`、`md`、`lg`。 |
+| `ShadowTokens` | `light_offset_x`、`light_offset_y`、`card_offset_x`、`card_offset_y`、`blur_radius`、`distance`、`opacity`、`direction`。 |
+
+### Component Style Priority
+
+渲染时样式合并顺序：
+
+```text
+Theme generated defaults
+  < theme.components / theme.component_styles
+  < block.style
+```
+
+组件读取的是 `ctx.style`，因此 Agent 通常只需要提供内容数据，不需要重复写颜色、字号、边框和阴影。
+
+## Layout System
+
+页面布局由 `PageLayout` 定义，block layout 再映射到具体 `Box`。
+
+| 模式 | 示例 | 说明 |
+| --- | --- | --- |
+| `grid` | `{"mode": "grid", "col": 1, "span": 4, "row": 1, "row_span": 2}` | 相对于页面 `content_box` 的网格布局。 |
+| `absolute` | `{"mode": "absolute", "x": 1, "y": 2, "w": 4, "h": 1}` | inch 绝对定位。 |
+| `zone` | `{"mode": "zone", "zone": "content"}` | 预留区域模式，当前内置 zones 较少。 |
+
+内置页面布局：`cover`、`section`、`standard`、`blank`、`full_bleed`、`closing`、`qa`。inline layout spec 支持 `{"type": "layout.grid", "columns": 12, "rows": 6, "gap": 0.2}`。
+
+## Masters And Chrome
+
+当前默认母版：`default`、`tech_blue`、`blank`。
+
+母版控制页面 chrome：
+
+| Chrome | 说明 |
+| --- | --- |
+| `accent_bar` | 左上角强调条，宽度可由主题 `decorations.accent_bar_width` 控制。 |
+| `footer` | 页脚文本和轻量线条。 |
+| `page_number` | 页码格式，例如 `{current} / {total}`。 |
+| `logo` | 文本 logo。 |
+| `title` / `subtitle` | 是否显示页面标题区。 |
+| `section` | section label。 |
 
 示例：
 
 ```json
 {
-  "type": "media.icon",
-  "props": {
-    "name": "lucide.sparkles",
-    "color": "primary",
-    "size": 128,
-    "stroke_width": 1.8
+  "masters": {
+    "tech_blue": {
+      "type": "master.tech_blue",
+      "chrome": {
+        "footer": {"visible": true, "text": "SlideForge"},
+        "page_number": {"visible": true, "format": "{current} / {total}"},
+        "accent_bar": {"visible": true}
+      }
+    }
   }
 }
 ```
 
-默认别名表覆盖常见前端图库，例如 Font Awesome（`fa.user`、`fa-brands.github`）、Bootstrap Icons（`bootstrap.alarm`）、Material Symbols（`material.auto-awesome`）、Carbon、Fluent、Radix、Octicons、Simple Icons、Solar、MingCute、Hugeicons 等。也可以在每个 `Deck` 上注册自定义 provider：
-
-```python
-from pathlib import Path
-from ppt_ui import Deck, LocalSvgIconProvider, media, layout, page
-
-deck = Deck()
-deck.icons.register_alias("company", "brand")
-deck.icons.register(LocalSvgIconProvider(Path("assets/icons"), prefix="brand"))
-deck.add_page(page.standard(title="Brand Icons", blocks=[media.icon(name="company.logo", layout=layout.grid_item(col=1, span=3, row=1))]))
-```
-
-## Theme System
-
-当前主题入口：
-
-```python
-from ppt_ui import get_theme
-
-theme = get_theme("default_blue")
-single_file_theme = get_theme("examples/themes/company_blue.json")
-directory_theme = get_theme("examples/themes/company_modular")
-```
-
-`get_theme()` 支持内置主题名、外部单文件 JSON 主题、带 `theme.json` 的外部主题目录、inline theme dict，以及直接传入 `Theme` 对象。通过 `deck_from_json()` 加载 deck 时，相对主题路径会按 deck JSON 所在目录解析。
-
-内置主题存放在 `ppt_ui/themes/` 下的 JSON 文件中。Python 代码只注册主题名并通过 `ThemeLoader` 加载这些文件。
-
-### Theme 来源
-
-| 来源 | 示例 | 状态 |
-| --- | --- | --- |
-| 内置主题 | `"default_blue"` | 已实现 |
-| 内置别名 | `"default"` | 已实现 |
-| 外部单文件 JSON | `"./themes/company_blue.json"` | 已实现 |
-| 外部目录主题 | `"./themes/company_modular"` | 已实现 |
-| Inline dict | `{ "name": "custom", "extends": "default_blue" }` | 已实现 |
-
-### 内置主题
-
-| 主题 | 主色 | 强调色 | 背景 | 适合场景 |
-| --- | --- | --- | --- | --- |
-| `theme.tech_blue` | `#2563EB` | `#7C3AED` | `#FFFFFF` | AI 产品、技术方案、组件库 demo |
-| `theme.academic_clean` | `#1E3A8A` | `#2563EB` | `#FFFFFF` | 论文答辩、学术报告、实验分析 |
-| `theme.business_navy` | `#0F2A5F` | `#D4AF37` | `#F8FAFC` | 商业计划、企业汇报、战略页 |
-| `theme.data_dashboard` | `#2563EB` | `#06B6D4` | `#F8FAFC` | 数据报告、运营周报、指标看板 |
-| `theme.medical_teal` | `#0F766E` | `#14B8A6` | `#F8FEFF` | 医疗 AI、OCT、生物医学、科研 deck |
-| `theme.dark_tech` | `#38BDF8` | `#A855F7` | `#020617` | 发布会、深色技术演示 |
-| `theme.claude_warm` | `#8B5E34` | `#D97706` | `#F7F3EA` | 温暖叙事报告、产品文档、思考型汇报 |
-
-`default`、`default_blue`、`tech_blue` 和 `theme.tech_blue` 都会解析到 Tech Blue 内置主题。
-
-目录主题使用 `theme.json` 作为入口，并可以引用 token / component 片段：
-
-```json
-{
-  "name": "company_modular",
-  "extends": "default_blue",
-  "tokens": "./tokens.json",
-  "components": [
-    "./components/data.json",
-    "./components/chart.json"
-  ]
-}
-```
-
-### Theme 字段
-
-| 字段 | 类型 | 默认值/说明 |
-| --- | --- | --- |
-| `name` | `string` | `tech_blue` |
-| `slide_width` | `float` | `13.333` inch |
-| `slide_height` | `float` | `7.5` inch |
-| `colors` | `ColorTokens` | 颜色 token |
-| `fonts` | `FontTokens` | 字体 token |
-| `spacing` | `SpacingTokens` | 间距 token |
-| `radius_tokens` | `RadiusTokens` | 圆角 token |
-| `shadow` | `ShadowTokens` | 阴影偏移 token |
-| `component_styles` | `dict[str, ComponentStyle]` | 组件样式 |
-| `component_defaults` | `dict[str, dict]` | 组件与 variant 的默认样式值 |
-| `chart_palette` | `list[str]` | 图表类组件使用的主题色板 |
-| `card_shadow` | `bool` | 是否启用卡片阴影 |
-
-### ColorTokens
-
-| Token | 默认值 | 说明 |
-| --- | --- | --- |
-| `background` | `FFFFFF` | 页面背景 |
-| `surface` | `F8FAFC` | 浅卡片背景 |
-| `surface_white` | `FFFFFF` | 白色卡片 |
-| `primary` | `2563EB` | 主蓝 |
-| `primary_dark` | `1E3A8A` | 深蓝 |
-| `primary_soft` | `EFF6FF` | 浅蓝 |
-| `primary_tint` | `DBEAFE` | 蓝色 tint |
-| `accent` | `7C3AED` | 紫色强调 |
-| `accent_soft` | `F5F3FF` | 浅紫 |
-| `accent_tint` | `EDE9FE` | 紫色 tint |
-| `success` | `10B981` | 成功色 |
-| `success_soft` | `ECFDF5` | 浅成功色 |
-| `warning` | `F59E0B` | 警示色 |
-| `warning_soft` | `FFF7ED` | 浅警示色 |
-| `danger` | `EF4444` | 危险色 |
-| `text_primary` | `0F172A` | 主文本 |
-| `text_secondary` | `64748B` | 次级文本 |
-| `text_tertiary` | `94A3B8` | 辅助文本 |
-| `border` | `E2E8F0` | 边框 |
-| `border_light` | `EEF2F7` | 浅边框 |
-| `gray_50` | `F8FAFC` | 中性色 |
-| `gray_100` | `F1F5F9` | 中性色 |
-| `gray_200` | `E2E8F0` | 中性色 |
-| `gray_700` | `334155` | 中性色 |
-| `shadow_light` | `EEF2FF` | 浅阴影 |
-| `shadow_card` | `E5EAF6` | 卡片阴影 |
-
-### FontTokens
-
-| Token | 默认值 | 说明 |
-| --- | --- | --- |
-| `family` | `Microsoft YaHei` | 字体 |
-| `title_size` | `36` | 封面标题 |
-| `subtitle_size` | `15` | 副标题 |
-| `h1_size` | `28` | 页面标题 |
-| `h2_size` | `18` | 模块标题 |
-| `body_size` | `11` | 正文 |
-| `caption_size` | `10` | 辅助文本 |
-| `tiny_size` | `8` | 极小文本 |
-| `display_size` | `54` | 大数字 |
-
-### Spacing / Radius / Shadow
-
-| Token | 默认值 | 说明 |
-| --- | --- | --- |
-| `spacing.base` | `8` | 设计基准值 |
-| `spacing.page_margin` | `0.55` | 左右页边距 inch |
-| `spacing.page_y` | `0.45` | 上下页边距 inch |
-| `spacing.title_top` | `0.48` | 标题顶部 |
-| `spacing.content_top` | `1.55` | 内容区顶部 |
-| `spacing.footer_y` | `7.04` | 页脚 y |
-| `spacing.gutter` | `0.20` | 卡片间距 |
-| `spacing.card_padding` | `0.22` | 卡片内边距 |
-| `radius_tokens.sm/md/lg` | `0.035/0.055/0.075` | 圆角调整值 |
-| `shadow.card_offset_x/y` | `0.012/0.018` | 卡片阴影偏移 |
-
-### Component Styles
-
-当前已有组件样式 key：
-
-| Key | 用途 |
-| --- | --- |
-| `card.default` | 通用卡片 |
-| `metric_card.default` | 指标卡 |
-| `table.comparison` | 对比表 |
-| `timeline.status_cards` | 时间轴状态卡 |
-| `process_flow.compact_cards` | 流程卡 |
-| `conclusion.hero` | 结论页主容器 |
-
-新增主题可在 Python 中构造 `Theme` 并传给 `Deck(theme=custom_theme)`。命名主题注册和从 JSON 指定自定义主题文件属于计划支持。
-
-## Layout System
-
-SlideForge 当前布局系统以 inch 为单位，核心是 `Box` 和 `PageBox`。主题提供页面尺寸和边距，`PageBox.from_theme(theme)` 会生成可用页面区域。
-
-推荐实践：
-
-- 先用 `add_slide_title()` 得到统一内容区。
-- 使用 `Box.inset()` 做内边距。
-- 使用 `split_cols()` 和 `split_rows()` 做网格，而不是到处写绝对坐标。
-- 复杂组件内部可以保留少量局部坐标，但应尽量基于 `content_box()` 和 theme spacing。
-
-当前没有完整 flex/grid layout engine；Row、Column、Spacer、Padding、Alignment 属于计划支持方向。
-
 ## Renderer
 
-组件不直接调用 `python-pptx` 的原因是：统一样式、统一单位、集中处理字体/颜色/卡片/表格，并减少 Agent 接触底层 shape 的机会。
+组件不直接调用 `python-pptx`，而是使用 `PptxRenderer` helper。这样可以统一单位、颜色、字体、主题默认值、卡片、图表和 icon 处理。
 
-`PptxRenderer` 当前 helper：
+当前重要 helper：
 
-| Helper | 功能 | 常用组件 |
-| --- | --- | --- |
-| `background(slide)` | 设置背景色 | 所有页面 |
-| `rect(slide, box, fill, line=None, rounded=False)` | 绘制矩形/圆角矩形 | 卡片、表格、标签 |
-| `line(slide, x1, y1, x2, y2, color=None, width=1.0)` | 绘制连接线 | 时间轴、图表、流程 |
-| `circle(slide, box, fill, line=None)` | 绘制圆形 | icon 占位、节点 |
-| `text(slide, box, text, size=None, color=None, bold=False, align="left", valign="top")` | 文本框 | 所有文本 |
-| `bullet_list(slide, box, items, size=None, ...)` | bullet 列表 | 双栏、SWOT、洞察 |
-| `card(slide, box, fill=None, line=None)` | `add_card()` 简写 | 内部兼容 |
-| `pill(slide, box, text, fill=None, color=None)` | pill 标签 | 封面元信息 |
-| `accent_bar(slide, x=..., y=..., h=...)` | `add_accent_bar()` 简写 | 标题装饰 |
-| `content_box()` | 返回统一内容区 | 页面布局 |
-| `add_accent_bar()` | 左上蓝紫强调条 | 大多数 slide |
-| `add_slide_title(title, subtitle="", section=None)` | 统一标题区并返回内容区 | 大多数 slide |
-| `add_footer(text=...)` | 轻量页脚 | 大多数 slide |
-| `add_card(box, fill=None, line=None, shadow=True)` | 统一卡片 | 数据、布局、叙事组件 |
-| `add_metric_card(...)` | 指标卡渲染 | `MetricCard` |
-| `add_section_label(label, box)` | 小编号标签 | 目录、流程、表格 |
-| `add_status_timeline_node(...)` | 状态时间轴节点 | `TimelineSlide` |
-| `add_process_step_card(...)` | 流程步骤卡 | `ProcessFlowSlide` |
-| `add_table(headers, rows)` | 统一表格 | 对比表、风险表、关系表 |
-
-注意：renderer helper 是内部 API，未来可能增强但应保持兼容。
+| Helper | 说明 |
+| --- | --- |
+| `background(slide)` | 主题背景，支持纯色、渐变和轻量 pattern。 |
+| `rect(...)` | 矩形/圆角矩形，支持透明度、线宽、虚线。 |
+| `line(...)` | 连接线、坐标轴、图表辅助线。 |
+| `circle(...)` | 圆形节点和占位符，支持透明度。 |
+| `text(...)` | 文本框，支持字体、对齐、垂直对齐、line spacing。 |
+| `bullet_list(...)` | bullet 列表。 |
+| `picture(...)` | 图片渲染，支持 `contain` / `cover`。 |
+| `icon_picture(...)` | SVG icon 转透明 PNG 后插入 PPT。 |
+| `add_card(...)` | 统一卡片，支持 fallback shadow 和 native shadow。 |
+| `add_metric_card(...)` | 指标卡。 |
+| `add_status_timeline_node(...)` | 状态时间轴节点。 |
+| `add_process_step_card(...)` | 流程步骤卡。 |
+| `add_table(...)` | 表格。 |
 
 ## Export Screenshots
-
-SlideForge 可以把生成的 PPTX 每页导出为 PNG：
 
 ```python
 from ppt_ui.export import export_pptx_screenshots
@@ -1401,242 +531,187 @@ from ppt_ui.export import export_pptx_screenshots
 export_pptx_screenshots("examples/demo.pptx", "examples/demo_screenshots")
 ```
 
-| 参数 | 类型 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `pptx_path` | `str | Path` | 必填 | PPTX 路径 |
-| `output_dir` | `str | Path` | 必填 | 输出目录 |
-| `width` | `int` | `1920` | 导出宽度 |
-| `height` | `int` | `1080` | 导出高度 |
-
 行为：
 
-- 每次导出会覆盖整个截图目录。
-- 输出文件会规范化为 `slide_01.png`、`slide_02.png`。
-- 依赖 Windows PowerPoint COM 自动化。
-- 没有 PowerPoint 或 `pywin32` 时会抛出 `ScreenshotExportError`。
+| 项 | 说明 |
+| --- | --- |
+| 覆盖输出 | 每次导出会覆盖整个截图目录。 |
+| 命名 | 输出 `slide_01.png`、`slide_02.png` 等。 |
+| 依赖 | Windows PowerPoint COM。没有 PowerPoint 或 COM 不可用时会抛出 `ScreenshotExportError`。 |
+| showcase | `build_demo_showcase()` 可以把截图拼成一张展示图。 |
 
-## Full Examples
+## Icons
 
-### 完整 JSON 示例
+`media.icon` 默认使用 Iconify API，支持前端式点号写法和 Iconify 冒号写法：
 
 ```json
 {
-  "title": "SlideForge Demo",
-  "theme": "default_blue",
-  "slides": [
+  "type": "media.icon",
+  "props": {
+    "name": "lucide.sparkles",
+    "color": "primary",
+    "size": 96,
+    "stroke_width": 1.8
+  }
+}
+```
+
+常用 alias：`lucide`、`heroicons`、`remix`/`ri`、`tabler`、`ph`、`mdi`、`material`、`fa`、`bootstrap`/`bi`、`carbon`、`fluent`、`radix`、`octicon`、`simple-icons`、`solar`、`mingcute`、`hugeicons`、`iconamoon`。
+
+扩展本地 SVG：
+
+```python
+from pathlib import Path
+from ppt_ui import Deck, LocalSvgIconProvider
+
+deck = Deck()
+deck.icons.register(LocalSvgIconProvider(Path("assets/icons"), prefix="brand"))
+deck.icons.register_alias("company", "brand")
+```
+
+## Full Examples
+
+### JSON
+
+```json
+{
+  "schema_version": "0.2",
+  "title": "Mini Deck",
+  "theme": "theme.claude",
+  "default_master": "tech_blue",
+  "pages": [
     {
-      "type": "slide.title",
-      "title": "可复用 PPT UI 组件库",
-      "subtitle": "Agent-driven PPT UI Framework",
-      "presenter": "SlideForge",
-      "date": "2026.05.03"
-    },
-    {
-      "type": "slide.section",
-      "number": "01",
-      "title": "基础布局组件",
-      "subtitle": "快速搭建标准汇报页面结构",
-      "keywords": ["标题页", "双栏布局", "指标卡", "表格", "时间轴"]
-    },
-    {
-      "type": "layout.two_column",
-      "title": "为什么需要组件库",
-      "left_title": "Agent 友好",
-      "left_items": ["只需描述页面语义", "避免直接操作 shape", "输出保持可编辑"],
-      "right_title": "工程可复用",
-      "right_items": ["统一主题 token", "统一布局规则", "可扩展 registry"]
-    },
-    {
-      "type": "data.metric_cards",
-      "title": "核心指标概览",
-      "cards": [
-        {"label": "准确率", "value": "92.3%", "delta": "+3.1%", "note": "较上期", "icon": "AC"},
-        {"label": "AUC", "value": "0.948", "delta": "+0.026", "note": "验证集", "icon": "AU"}
+      "type": "page.standard",
+      "title": "Metrics And Trend",
+      "subtitle": "Multiple independent blocks on one page",
+      "blocks": [
+        {
+          "type": "data.metric_cards",
+          "layout": {"mode": "grid", "col": 1, "span": 4, "row": 1, "row_span": 2},
+          "props": {
+            "cards": [
+              {"label": "Accuracy", "value": "92.3%", "delta": "+3.1%", "compare": "vs previous", "icon": "AC"},
+              {"label": "AUC", "value": "0.948", "delta": "+0.026", "compare": "validation", "icon": "AU"}
+            ]
+          }
+        },
+        {
+          "type": "chart.line",
+          "layout": {"mode": "grid", "col": 5, "span": 8, "row": 1, "row_span": 2},
+          "props": {
+            "categories": ["4/29", "5/6", "5/13"],
+            "series": [{"name": "Coverage", "values": [23, 36, 48]}]
+          }
+        }
       ]
-    },
-    {
-      "type": "table.comparison",
-      "title": "方案对比分析",
-      "headers": ["维度", "方案 A", "方案 B"],
-      "rows": [["成本", "中", "低"], ["周期", "短", "中"], ["推荐", "A", "B"]],
-      "conclusion": "综合功能完整性、实施周期与成本，优先推荐方案 A。"
-    },
-    {
-      "type": "narrative.timeline",
-      "title": "项目时间轴",
-      "items": [
-        {"label": "需求分析", "date": "2026.05", "description": "明确目标", "status": "done"},
-        {"label": "开发测试", "date": "2026.07", "description": "完成核心组件", "status": "active"}
-      ]
-    },
-    {
-      "type": "narrative.process_flow",
-      "title": "项目实施流程",
-      "steps": [
-        {"title": "需求分析", "description": "明确目标与范围", "output": "需求清单"},
-        {"title": "方案设计", "description": "输出结构化页面方案", "output": "DSL Schema"},
-        {"title": "开发实现", "description": "组件渲染与样式统一", "output": "组件库"}
-      ]
-    },
-    {
-      "type": "slide.conclusion",
-      "points": [
-        {"title": "组件复用", "description": "降低重复排版成本"},
-        {"title": "主题统一", "description": "通过 token 保证一致性"},
-        {"title": "Agent 友好", "description": "由 JSON DSL 驱动"}
-      ]
-    },
-    {
-      "type": "slide.qa",
-      "project": "SlideForge",
-      "description": "欢迎交流组件设计、主题扩展与 Agent 生成链路"
     }
   ]
 }
 ```
 
-### 完整 Python 示例
+### External Theme
 
-```python
-from ppt_ui import Deck, data, layout, narrative, slide, table
+单文件主题：
 
-deck = Deck(title="SlideForge Demo")
-deck.add_slide(slide.title(title="可复用 PPT UI 组件库", subtitle="Agent-driven PPT UI Framework"))
-deck.add_slide(slide.section(number="01", title="基础布局组件", keywords=["双栏", "指标卡", "时间轴"]))
-deck.add_slide(
-    layout.two_column(
-        title="为什么需要组件库",
-        left_title="Agent 友好",
-        left_items=["描述页面语义", "避免底层 shape"],
-        right_title="工程可复用",
-        right_items=["统一主题", "统一布局"],
-    )
-)
-deck.add_slide(
-    data.metric_cards(
-        title="核心指标概览",
-        cards=[data.metric_card(label="准确率", value="92.3%", delta="+3.1%", icon="AC")],
-    )
-)
-deck.add_slide(
-    table.comparison(
-        title="方案对比",
-        headers=["维度", "方案 A", "方案 B"],
-        rows=[["成本", "中", "低"]],
-        conclusion="优先推荐方案 A。",
-    )
-)
-deck.add_slide(
-    narrative.timeline(
-        title="项目时间轴",
-        items=[{"label": "开发测试", "date": "2026.07", "description": "完成核心组件", "status": "active"}],
-    )
-)
-deck.add_slide(slide.qa())
-deck.render("examples/python_api_demo.pptx")
+```json
+{
+  "name": "company_blue",
+  "extends": "theme.tech_blue",
+  "primary": "#0052CC",
+  "accent": "#6554C0",
+  "font_family": "Aptos",
+  "chart_palette": ["#0052CC", "#6554C0", "#36B37E"]
+}
+```
+
+目录主题：
+
+```text
+themes/company_modular/
+  theme.json
+  tokens.json
+  components/
+    data.json
+    chart.json
+```
+
+```json
+{
+  "name": "company_modular",
+  "extends": "theme.tech_blue",
+  "tokens": "./tokens.json",
+  "components": ["./components/data.json", "./components/chart.json"]
+}
 ```
 
 ## Agent Usage Guide
 
-Agent 应该生成 JSON DSL，而不是生成 `python-pptx` 代码。
+Agent 推荐流程：
 
-推荐流程：
-
-1. 分析用户需求，判断是汇报、方案、数据报告还是复盘。
-2. 拆分页面结构，例如封面、目录、章节、数据页、分析页、总结页。
-3. 为每页选择 namespace type。
-4. 填写该组件的必填字段，控制内容长度。
-5. 把 JSON 交给 `deck_from_dict()` 或 `deck_from_json()` 渲染。
-
-Agent 约束：
-
-- `type` 必须来自 registry。
-- 不要输出 `add_textbox`、`add_shape`、绝对坐标。
-- 图表 `series[].values` 长度应尽量匹配 `categories`。
-- 表格每行列数应匹配 `headers`。
-- 标题、bullet、表格单元格文字要短，避免溢出。
-- 未实现字段如 `style`、`layout`、`hidden` 不应依赖当前版本生效。
+1. 分析用户目标和内容类型。
+2. 拆分页面结构，选择 `page.cover`、`page.standard`、`page.section`、`page.qa` 等页面。
+3. 为每页选择多个 block，例如 `data.metric_cards`、`chart.line`、`table.comparison`。
+4. 使用 `layout.grid` 或 block `layout.mode=grid` 分配区域。
+5. 只填写内容 props，避免反复写颜色和字号。
+6. 选择主题，例如 `theme.claude` 或 `theme.tech_blue`。
+7. 交给 `deck_from_json()` 和 `Deck.render()` 生成 PPTX。
 
 常见错误：
 
-| 错误 | 结果 | 修复 |
-| --- | --- | --- |
-| `type` 不存在 | `ValueError: Unsupported slide type` | 使用已实现 namespace type |
-| 必填字段缺失 | dataclass 构造报错 | 查组件参数表 |
-| chart 数据长度不一致 | 缺失值或视觉错位 | 对齐 `categories` 和 `values` |
-| table 行列不匹配 | 列宽不稳定 | 每行列数等于 headers |
-| 内容过长 | 文本缩小或溢出 | 缩短文本，拆成多页 |
+| 错误 | 结果 |
+| --- | --- |
+| `type` 不存在 | strict parser 抛出 `UNKNOWN_COMPONENT_TYPE`。 |
+| `pages` 缺失 | parser 抛出 `MISSING_PAGES`。 |
+| `chart.line.series[].values` 长度和 `categories` 不一致 | 产生 warning，仍保存在 `deck.diagnostics`。 |
+| `table.rows[]` 长度和 `headers` 不一致 | 产生 warning。 |
+| 内容过长 | 可能触发 PowerPoint 自动缩放或视觉溢出，需要减少文本或拆页。 |
 
 ## Component Extension Guide
 
-以新增 `chart.scatter` 为例：
+新增 `chart.scatter` 的典型步骤：
 
-1. 在 `ppt_ui/components/data.py` 新增 `ScatterChartSlide` 和必要的 dataclass，例如 `ScatterPoint`。
-2. 实现 `render(ctx, box)`，优先使用 `ctx.renderer.add_slide_title()`、`add_card()`、`Box` 布局。
-3. 在 `ppt_ui/api.py` 的 `ChartNamespace` 增加 `scatter(...)` 工厂。
-4. 在 `ppt_ui/schema/parser.py` 中新增 `_scatter_chart_slide()` 工厂。
-5. 在 `build_default_registry()` 注册 `registry.register_slide("chart.scatter", _scatter_chart_slide)`。
+1. 在 `ppt_ui/components/blocks.py` 新增组件类，提供 `from_props()` 和 `render(ctx, box)`。
+2. 在 `ppt_ui/components/registry.py` 注册 `registry.register("chart.scatter", ScatterChartComponent.from_props)`。
+3. 如需校验，在 `ppt_ui/schema/parser.py` 增加 props 校验。
+4. 在主题 JSON 的 `components` 或 `component_styles` 中加入 `chart.scatter.default`。
+5. 在 `ppt_ui/api.py` 的 `ChartNamespace` 增加 Python helper。
 6. 在 `examples/sample_deck.json` 增加示例。
-7. 在 `tests/test_parser.py` 增加 parser 和 namespace API 测试。
-8. 在文档的 Component API 中补充参数表、JSON 示例、注意事项。
-
-建议为大型组件库保留 family + variant 思路：`chart.line`、`chart.bar`、`chart.scatter` 共用 chart family 的主题 token，但各自拥有独立渲染表达。
+7. 在 `tests/` 增加 parser 或渲染相关测试。
+8. 更新本文档的组件表和 props 表。
 
 ## FAQ
 
 ### 生成的 PPT 可以编辑吗？
 
-可以。SlideForge 底层使用 `python-pptx` 创建 PowerPoint shape、textbox 和 chart，输出是可编辑 `.pptx`。
+可以。文本、shape、表格、原生图表和图片都写入普通 `.pptx`。部分复杂 icon 会先转成透明 PNG，因此 icon 图片本身不是矢量 shape。
 
 ### 为什么不用 Agent 直接写 python-pptx？
 
-直接写底层 API 容易造成坐标混乱、样式不一致、重复代码多。SlideForge 让 Agent 输出语义化 JSON，由组件库统一渲染。
-
-### JSON type 写错怎么办？
-
-parser 会抛出 `ValueError: Unsupported slide type`。请使用本文档中的已实现 namespace type。
+直接写底层 shape 会让样式、坐标和布局逻辑散落在每个 Agent 输出中。SlideForge 让 Agent 输出 DSL，组件库统一处理主题、布局和可复用组件。
 
 ### 中文字体显示异常怎么办？
 
-当前默认字体是 `Microsoft YaHei`。在没有该字体的系统上，可以在 Python 中自定义 `Theme.fonts.family`，或在 PowerPoint 中替换字体。
-
-### 图表数据太长怎么办？
-
-减少分类数量、拆成多页，或改用表格/注释组件。当前还没有自动抽样和文本避让。
-
-### 如何自定义主题？
-
-可以在 Python 中构造 `Theme` 并传给 `Deck(theme=theme)`，也可以通过 `get_theme()` / `ThemeLoader` 加载外部单文件 JSON 或目录主题，例如 `get_theme("examples/themes/company_blue.json")`、`get_theme("examples/themes/company_modular")`。
-
-### 如何新增组件？
-
-新增 dataclass 组件、实现 `render()`、注册到 `ComponentRegistry`、补充 namespace API、示例和测试。
+主题中的 `font_family`、`title_font_family` 等需要使用本机已安装字体。跨平台 deck 建议选择常见字体或在使用环境中安装对应字体。
 
 ### 如何关闭截图导出？
 
-运行：
+运行 `uv run python examples/demo_deck.py --no-screenshots`。
 
-```bash
-uv run python examples/demo_deck.py --no-screenshots
-```
+### 如何只生成主 demo？
 
-### Windows / macOS 是否都支持？
-
-PPTX 生成跨平台；截图导出当前依赖 Windows PowerPoint COM。macOS/Linux 截图导出属于计划支持。
+运行 `uv run python examples/demo_deck.py --skip-theme-demos`。
 
 ### PowerPoint COM 截图导出依赖什么？
 
-依赖 Windows、Microsoft PowerPoint、本地 COM 自动化和 `pywin32`。
+依赖 Windows、已安装 PowerPoint 和可用的 COM 自动化环境。没有这些依赖时 PPTX 仍可生成，只是截图导出失败。
 
 ## Roadmap
 
-- 更多 chart 组件：scatter、area、combo、waterfall。
-- 更多主题：商务灰蓝、学术简洁、深色科技、品牌主题。
-- 更完整 layout engine：Row、Column、Spacer、Padding、Alignment、12 栏栅格。
-- 自动文本缩放、溢出检测和分页建议。
-- SVG/icon 渲染：把 Iconify、Lucide、Heroicons 等前端图标库接入 PPT。
-- `media.image` 图片组件和图片裁切策略。
-- 更强 JSON schema 校验和错误提示。
-- Agent prompt templates 和页面规划器。
-- Web preview 或截图对比回归。
-- 从 JSON 指定截图导出、page size、metadata、author、version。
+- 更多 chart：scatter、area、radar、waterfall。
+- 更完整 layout engine：Row、Column、Spacer、Padding、Alignment。
+- 自动文本缩放和溢出诊断。
+- 更强 JSON Schema 校验。
+- 更多主题包和主题市场。
+- SVG/icon 的更多本地缓存和离线能力。
+- Agent prompt templates。
+- Web preview。

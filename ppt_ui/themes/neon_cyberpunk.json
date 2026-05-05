@@ -1,0 +1,99 @@
+{
+  "name": "neon_cyberpunk",
+  "metadata": {
+    "display_name": "Neon Cyberpunk",
+    "suitable_for": ["Tech conferences", "Gaming events", "Startup pitches", "Futuristic themes"],
+    "visual_features": ["Dark grid background", "Neon top-border cards", "Monospace typography", "HUD-style decorations"]
+  },
+  "background": "#0B0E1A",
+  "surface": "#111827",
+  "surface_alt": "#1E293B",
+  "surface_white": "#111827",
+  "primary": "#00FF41",
+  "primary_dark": "#00CC33",
+  "primary_soft": "#0A1A0E",
+  "primary_tint": "#003311",
+  "accent": "#00D4FF",
+  "accent_soft": "#0A1520",
+  "accent_tint": "#003344",
+  "text_primary": "#00FF41",
+  "text_secondary": "#94A3B8",
+  "text_muted": "#475569",
+  "border": "#1E293B",
+  "border_light": "#1A2332",
+  "font_family": "Consolas",
+  "title_font_family": "Consolas",
+  "title_size": 36,
+  "subtitle_size": 14,
+  "h1_size": 28,
+  "h2_size": 18,
+  "body_size": 11,
+  "caption_size": 10,
+  "tiny_size": 8,
+  "display_size": 52,
+  "page_margin": 0.55,
+  "content_gap": 0.20,
+  "card_radius": 0.0,
+  "card_shadow": false,
+  "chart_palette": ["#00FF41", "#00D4FF", "#FF00FF", "#FFFF00", "#FF6600", "#FF0044"],
+  "background_pattern": "grid",
+  "shadow": {
+    "blur_radius": 0.0,
+    "distance": 0.0,
+    "opacity": 0.0
+  },
+  "decorations": {
+    "accent_bar_width": 0.06,
+    "footer_line_width": 0.03,
+    "footer_line_lengths": [1.5, 0.8],
+    "card_radius": 0.0,
+    "card_top_border": "00FF41"
+  },
+  "component_styles": {
+    "card.default": {
+      "fill": "111827",
+      "border": "1E293B",
+      "line_width": 0.5,
+      "opacity": 0.80
+    },
+    "metric_card.default": {
+      "fill": "111827",
+      "border": "00D4FF",
+      "line_width": 0.5,
+      "opacity": 0.80,
+      "accent": "00D4FF"
+    },
+    "chart.line.default": {
+      "fill": "111827",
+      "border": "1E293B",
+      "line_width": 2.0,
+      "opacity": 0.80
+    },
+    "chart.bar.default": {
+      "fill": "111827",
+      "border": "1E293B",
+      "opacity": 0.80
+    },
+    "table.comparison": {
+      "fill": "111827",
+      "border": "1E293B",
+      "accent": "1E293B",
+      "title": "00FF41",
+      "body": "94A3B8"
+    },
+    "narrative.timeline.default": {
+      "fill": "111827",
+      "border": "00D4FF",
+      "line_width": 0.5,
+      "opacity": 0.80,
+      "accent": "00D4FF"
+    },
+    "conclusion.hero": {
+      "fill": "00FF41",
+      "border": "00FF41",
+      "accent": "00D4FF",
+      "title": "0B0E1A",
+      "body": "0B0E1A"
+    }
+  }
+}

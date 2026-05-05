@@ -1,0 +1,106 @@
+{
+  "name": "glassmorphism",
+  "metadata": {
+    "display_name": "Glassmorphism",
+    "suitable_for": ["Product showcases", "Modern presentations", "Creative pitches"],
+    "visual_features": ["Gradient background", "Frosted glass cards", "Native blur shadows", "Clean minimal design"]
+  },
+  "background": "#E8EEFF",
+  "surface": "#FFFFFF",
+  "surface_alt": "#F0F0FF",
+  "surface_white": "#FFFFFF",
+  "primary": "#6366F1",
+  "primary_dark": "#4338CA",
+  "primary_soft": "#EEF2FF",
+  "primary_tint": "#E0E7FF",
+  "accent": "#A855F7",
+  "accent_soft": "#FAF5FF",
+  "accent_tint": "#F3E8FF",
+  "text_primary": "#1E1B4B",
+  "text_secondary": "#6366F1",
+  "text_muted": "#A5B4FC",
+  "border": "#E0E7FF",
+  "border_light": "#EEF2FF",
+  "font_family": "Segoe UI",
+  "title_font_family": "Segoe UI Light",
+  "title_size": 40,
+  "subtitle_size": 16,
+  "h1_size": 30,
+  "h2_size": 18,
+  "body_size": 11,
+  "caption_size": 10,
+  "tiny_size": 8,
+  "display_size": 56,
+  "page_margin": 0.55,
+  "content_gap": 0.22,
+  "card_radius": 0.12,
+  "card_shadow": false,
+  "chart_palette": ["#6366F1", "#A855F7", "#06B6D4", "#10B981", "#F59E0B", "#EC4899"],
+  "gradient": {
+    "stops": [
+      {"color": "#DBEAFE", "position": 0},
+      {"color": "#E8D5F5", "position": 100}
+    ],
+    "angle": 5400000
+  },
+  "shadow": {
+    "blur_radius": 0.10,
+    "distance": 0.04,
+    "opacity": 0.18,
+    "direction": 5400000
+  },
+  "decorations": {
+    "accent_bar_width": 0.0,
+    "footer_line_width": 0.0,
+    "footer_line_lengths": [0.0],
+    "card_radius": 0.12
+  },
+  "component_styles": {
+    "card.default": {
+      "fill": "FFFFFF",
+      "border": "FFFFFF",
+      "opacity": 0.65,
+      "line_width": 0.0
+    },
+    "metric_card.default": {
+      "fill": "FFFFFF",
+      "border": "FFFFFF",
+      "opacity": 0.60,
+      "line_width": 0.0,
+      "accent": "6366F1"
+    },
+    "chart.line.default": {
+      "fill": "FFFFFF",
+      "border": "FFFFFF",
+      "opacity": 0.55,
+      "line_width": 2.0
+    },
+    "chart.bar.default": {
+      "fill": "FFFFFF",
+      "border": "FFFFFF",
+      "opacity": 0.55
+    },
+    "table.comparison": {
+      "fill": "FFFFFF",
+      "border": "FFFFFF",
+      "opacity": 0.60,
+      "accent": "EEF2FF",
+      "title": "4338CA",
+      "body": "1E1B4B"
+    },
+    "narrative.timeline.default": {
+      "fill": "FFFFFF",
+      "border": "FFFFFF",
+      "opacity": 0.60,
+      "accent": "A855F7"
+    },
+    "conclusion.hero": {
+      "fill": "6366F1",
+      "border": "6366F1",
+      "accent": "A855F7",
+      "title": "FFFFFF",
+      "body": "FFFFFF",
+      "opacity": 0.85
+    }
+  }
+}
