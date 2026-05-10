@@ -12,6 +12,7 @@ from ppt_ui.core.page import Block, Page
 from ppt_ui.core.presentation import Deck
 from ppt_ui.core.registry import ComponentRegistry
 from ppt_ui.core.theme import get_theme
+from ppt_ui.styles import StyleSheet
 
 
 def deck_from_json(path: str | Path) -> Deck:
@@ -41,6 +42,7 @@ def deck_from_dict(
         default_master=str(data.get("default_master", "tech_blue")),
         masters=masters,
         components=registry,
+        styles=StyleSheet.from_value(data.get("styles")),
         metadata=dict(data.get("metadata", {})),
         diagnostics=diagnostics.items,
     )
@@ -70,10 +72,22 @@ def validate_deck_dict(data: Mapping[str, Any], registry: ComponentRegistry) -> 
         diagnostics.error("MISSING_PAGES", "Deck must contain a pages array.", path="$.pages")
         return diagnostics
 
+    styles = data.get("styles")
+    if styles is not None and not isinstance(styles, (Mapping, list)):
+        diagnostics.error(
+            "INVALID_STYLES",
+            "Deck styles must be an object or an array of style rules.",
+            path="$.styles",
+            suggestion="Use {\".class-name\": {\"fill\": \"{colors.surface}\"}} or [{\"selector\": \".class\", \"style\": {...}}].",
+        )
+
     raw_masters = data.get("masters", {})
     master_names = {"default", "tech_blue", "blank"}
     if isinstance(raw_masters, Mapping):
         master_names.update(str(name) for name in raw_masters.keys())
+        validate_masters(raw_masters, diagnostics)
+    elif raw_masters not in ({}, None):
+        diagnostics.error("INVALID_MASTERS", "Deck masters must be an object.", path="$.masters")
     default_master = str(data.get("default_master", "tech_blue"))
     if default_master not in master_names:
         diagnostics.error("UNKNOWN_MASTER", f"Unknown default master: {default_master}", path="$.default_master")
@@ -94,6 +108,10 @@ def validate_deck_dict(data: Mapping[str, Any], registry: ComponentRegistry) -> 
         page_master = raw_page.get("master")
         if page_master is not None and str(page_master) not in master_names:
             diagnostics.error("UNKNOWN_MASTER", f"Unknown page master: {page_master}", path=f"{page_path}.master")
+        if raw_page.get("layout") is not None and not isinstance(raw_page.get("layout"), (str, Mapping)):
+            diagnostics.error("INVALID_PAGE_LAYOUT", "Page layout must be a string or object.", path=f"{page_path}.layout")
+        if raw_page.get("chrome") is not None and not isinstance(raw_page.get("chrome"), Mapping):
+            diagnostics.error("INVALID_PAGE_CHROME", "Page chrome must be an object.", path=f"{page_path}.chrome")
         blocks = raw_page.get("blocks", [])
         if not isinstance(blocks, list):
             diagnostics.error("INVALID_BLOCKS", "Page blocks must be an array.", path=f"{page_path}.blocks")
@@ -114,10 +132,11 @@ def validate_block(raw_block: object, registry: ComponentRegistry, diagnostics: 
     if not type_name:
         diagnostics.error("MISSING_BLOCK_TYPE", "Block type is required.", path=f"{path}.type")
         return
-    if not registry.has(type_name):
+    variant_name = str(raw_block.get("variant", "default"))
+    if not registry.has(type_name, variant=variant_name):
         diagnostics.error(
             "UNKNOWN_COMPONENT_TYPE",
-            f"Unsupported component type: {type_name}",
+            f"Unsupported component type: {type_name}" + (f" variant: {variant_name}" if variant_name != "default" else ""),
             path=f"{path}.type",
             suggestion=f"Use one of: {', '.join(registry.type_names())}",
         )
@@ -127,6 +146,23 @@ def validate_block(raw_block: object, registry: ComponentRegistry, diagnostics: 
         diagnostics.error("INVALID_PROPS", "Block props must be an object.", path=f"{path}.props")
         return
 
+    layout = raw_block.get("layout", {})
+    if layout is not None and not isinstance(layout, Mapping):
+        diagnostics.error("INVALID_LAYOUT", "Block layout must be an object.", path=f"{path}.layout")
+
+    style = raw_block.get("style", {})
+    if style is not None and not isinstance(style, Mapping):
+        diagnostics.error("INVALID_STYLE", "Block style must be an object.", path=f"{path}.style")
+
+    class_value = raw_block.get("class_names", raw_block.get("classes", raw_block.get("class")))
+    if class_value is not None and not isinstance(class_value, (str, list, tuple)):
+        diagnostics.warning(
+            "INVALID_CLASS_NAMES",
+            "Block class must be a string or array of strings.",
+            path=f"{path}.class",
+            suggestion="Use \"class\": \"hero card\" or \"classes\": [\"hero\", \"card\"].",
+        )
+
     if type_name == "chart.line":
         validate_chart_series(props, diagnostics, f"{path}.props")
     elif type_name in {"chart.bar", "chart.pie", "chart.donut"}:
@@ -135,6 +171,19 @@ def validate_block(raw_block: object, registry: ComponentRegistry, diagnostics: 
             diagnostics.warning("INVALID_CHART_VALUES", "Chart values should be an array.", path=f"{path}.props.values")
     elif type_name in {"table.comparison", "table.basic"}:
         validate_table(props, diagnostics, f"{path}.props")
+    elif type_name in {"layout.container", "layout.card", "layout.stack", "layout.grid"}:
+        validate_container_children(props, registry, diagnostics, f"{path}.props")
+
+
+def validate_container_children(props: Mapping[str, Any], registry: ComponentRegistry, diagnostics: DiagnosticBag, path: str) -> None:
+    children = props.get("children", props.get("blocks", []))
+    if children is None:
+        return
+    if not isinstance(children, list):
+        diagnostics.error("INVALID_CONTAINER_CHILDREN", "Container children must be an array.", path=f"{path}.children")
+        return
+    for child_index, child in enumerate(children):
+        validate_block(child, registry, diagnostics, f"{path}.children[{child_index}]")
 
 
 def validate_chart_series(props: Mapping[str, Any], diagnostics: DiagnosticBag, path: str) -> None:
@@ -179,6 +228,33 @@ def validate_table(props: Mapping[str, Any], diagnostics: DiagnosticBag, path: s
             diagnostics.warning("TABLE_ROW_LENGTH_MISMATCH", "Table row length does not match headers length.", path=f"{path}.rows[{row_index}]")
 
 
+def validate_masters(raw_masters: Mapping[str, Any], diagnostics: DiagnosticBag) -> None:
+    for name, raw_master in raw_masters.items():
+        path = f"$.masters.{name}"
+        if not isinstance(raw_master, Mapping):
+            diagnostics.error("INVALID_MASTER", "Master definition must be an object.", path=path)
+            continue
+        for field_name in ("back_primitives", "fore_primitives"):
+            specs = raw_master.get(field_name, [])
+            if specs is None:
+                continue
+            if not isinstance(specs, list):
+                diagnostics.error("INVALID_MASTER_PRIMITIVES", f"Master {field_name} must be an array.", path=f"{path}.{field_name}")
+                continue
+            for index, spec in enumerate(specs):
+                spec_path = f"{path}.{field_name}[{index}]"
+                if not isinstance(spec, Mapping):
+                    diagnostics.error("INVALID_MASTER_PRIMITIVE", "Master primitive spec must be an object.", path=spec_path)
+                    continue
+                type_name = str(spec.get("type", "primitive.text"))
+                if not type_name.startswith("primitive."):
+                    diagnostics.warning(
+                        "UNSUPPORTED_MASTER_PRIMITIVE",
+                        f"Master primitive type should use primitive.*: {type_name}",
+                        path=f"{spec_path}.type",
+                    )
+
+
 def masters_from_dict(data: object) -> MasterRegistry:
     registry = MasterRegistry.with_defaults()
     if not isinstance(data, Mapping):
@@ -195,6 +271,8 @@ def masters_from_dict(data: object) -> MasterRegistry:
                 name=str(name),
                 chrome={**base.chrome, **dict(raw_master.get("chrome", {}))},
                 background={**base.background, **dict(raw_master.get("background", {}))},
+                back_primitives=[dict(item) for item in raw_master.get("back_primitives", []) if isinstance(item, Mapping)],
+                fore_primitives=[dict(item) for item in raw_master.get("fore_primitives", []) if isinstance(item, Mapping)],
             ),
         )
     return registry

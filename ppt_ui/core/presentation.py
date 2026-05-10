@@ -12,6 +12,7 @@ from ppt_ui.core.registry import ComponentRegistry
 from ppt_ui.core.theme import Theme
 from ppt_ui.icons.provider import IconRegistry, default_icon_registry
 from ppt_ui.renderer.pptx_renderer import PptxRenderer
+from ppt_ui.styles import StyleSheet
 
 
 @dataclass
@@ -23,6 +24,7 @@ class Deck:
     masters: MasterRegistry = field(default_factory=MasterRegistry.with_defaults)
     components: ComponentRegistry = field(default_factory=build_default_component_registry)
     icons: IconRegistry = field(default_factory=default_icon_registry)
+    styles: StyleSheet = field(default_factory=StyleSheet)
     metadata: dict[str, Any] = field(default_factory=dict)
     diagnostics: list[Diagnostic] = field(default_factory=list)
 
@@ -32,4 +34,6 @@ class Deck:
     def render(self, output_path: str | Path) -> Path:
         renderer = PptxRenderer(self.theme, icon_registry=self.icons)
         renderer.render_deck(self)
-        return renderer.save(output_path)
+        path = renderer.save(output_path)
+        self.diagnostics.extend(renderer.diagnostics)
+        return path

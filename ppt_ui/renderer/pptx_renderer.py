@@ -15,8 +15,26 @@ from PIL import Image
 import lxml.etree as ET
 
 from ppt_ui.core.component import RenderContext
+from ppt_ui.core.diagnostics import Diagnostic
 from ppt_ui.core.layout import Box, layout_from_spec, resolve_block_box
+from ppt_ui.core.text_overflow import apply_text_overflow
 from ppt_ui.icons.provider import IconRegistry, IconRequest, default_icon_registry
+from ppt_ui.primitives import (
+    ChartPrimitive,
+    Connector,
+    Ellipse,
+    Group,
+    IconPrimitive,
+    ImagePrimitive,
+    Line as LinePrimitive,
+    PathPrimitive,
+    Polygon,
+    Rect,
+    RichText,
+    TablePrimitive,
+    Text,
+)
+from ppt_ui.styles import Style, StyleResolver, StyleSheet, StyleTarget
 
 
 def _rgb(value: str) -> RGBColor:
@@ -51,6 +69,24 @@ def _add_native_shadow(shape: object, blur_radius: int, distance: int, direction
     alpha.set('val', str(int(opacity * 100000)))
 
 
+def _inheritable_style(style: Style | None) -> Style:
+    if style is None:
+        return Style()
+    return Style(
+        color=style.color,
+        font_family=style.font_family,
+        font_size=style.font_size,
+        font_weight=style.font_weight,
+        align=style.align,
+        valign=style.valign,
+        line_spacing=style.line_spacing,
+    )
+
+
+def _merge_inherited_style(parent: Style | None, child: Style | None) -> Style:
+    return _inheritable_style(parent).merge(_inheritable_style(child))
+
+
 class PptxRenderer:
     def __init__(self, theme: object, icon_registry: IconRegistry | None = None) -> None:
         self.theme = theme
@@ -59,13 +95,14 @@ class PptxRenderer:
         self.prs.slide_height = Inches(theme.slide_height)
         self.icon_registry = icon_registry or default_icon_registry()
         self.icon_cache_dir = Path(tempfile.gettempdir()) / "slideforge" / "icons"
+        self.diagnostics: list[Diagnostic] = []
 
     def render_deck(self, deck: object) -> None:
         visible_pages = [page for page in deck.pages if not page.hidden]
         total_pages = len(visible_pages)
         for page_index, page in enumerate(visible_pages, start=1):
             slide = self.prs.slides.add_slide(self.prs.slide_layouts[6])
-            ctx = RenderContext(slide=slide, theme=self.theme, renderer=self)
+            ctx = RenderContext(slide=slide, theme=self.theme, renderer=self, stylesheet=deck.styles, component_registry=deck.components)
             self.render_page(ctx, deck, page, page_index, total_pages)
 
     def render_page(self, ctx: RenderContext, deck: object, page: object, page_index: int, total_pages: int) -> None:
@@ -84,10 +121,13 @@ class PptxRenderer:
         for block in page.blocks:
             if not block.visible:
                 continue
-            component = deck.components.create(block.type, block.props)
+            component = deck.components.create(block.type, block.props, variant=block.variant)
             theme_style = self.theme.component_default_style(block.type, block.variant)
             component_style = {**theme_style, **block.style}
-            component.render(ctx.with_style(component_style), resolve_block_box(layout, block.layout))
+            component.render(
+                ctx.with_block(block_id=block.id, class_names=block.class_names).with_style(component_style),
+                resolve_block_box(layout, block.layout),
+            )
 
         if master is not None:
             master.render_fore_chrome(ctx, page, layout, page_index, total_pages)
@@ -97,6 +137,248 @@ class PptxRenderer:
         path.parent.mkdir(parents=True, exist_ok=True)
         self.prs.save(path)
         return path
+
+    def render_tree(
+        self,
+        slide: object,
+        primitive: object,
+        *,
+        stylesheet: StyleSheet | None = None,
+    ) -> list[object]:
+        """Render a primitive tree to a PPT slide."""
+
+        resolver = StyleResolver(self.theme, stylesheet or StyleSheet())
+        return self.render_primitive(slide, primitive, resolver=resolver)
+
+    def render_primitive(
+        self,
+        slide: object,
+        primitive: object,
+        *,
+        resolver: StyleResolver | None = None,
+        inherited_style: Style | None = None,
+    ) -> list[object]:
+        """Render one primitive node and its children."""
+
+        resolver = resolver or StyleResolver(self.theme)
+        shapes: list[object] = []
+        if isinstance(primitive, Group):
+            group_style = self._primitive_style(primitive, resolver, base=inherited_style)
+            child_inherited = _merge_inherited_style(inherited_style, group_style)
+            for child in primitive.children:
+                shapes.extend(self.render_primitive(slide, child, resolver=resolver, inherited_style=child_inherited))
+            return shapes
+
+        style = self._primitive_style(primitive, resolver, base=inherited_style)
+        rendered = self._render_single_primitive(slide, primitive, style)
+        if isinstance(rendered, list):
+            shapes.extend(item for item in rendered if item is not None)
+        elif rendered is not None:
+            shapes.append(rendered)
+
+        for child in getattr(primitive, "children", ()):
+            shapes.extend(self.render_primitive(slide, child, resolver=resolver, inherited_style=_inheritable_style(style)))
+        return shapes
+
+    def _primitive_style(self, primitive: object, resolver: StyleResolver, *, base: Style | None = None) -> Style:
+        type_name = f"primitive.{getattr(primitive, 'type', 'primitive')}"
+        target = StyleTarget(
+            type_name=type_name,
+            id=getattr(primitive, "id", None),
+            class_names=tuple(getattr(primitive, "class_names", ())),
+        )
+        style = resolver.resolve(target, base=base, inline=getattr(primitive, "style", None))
+        metadata = getattr(primitive, "metadata", {}) or {}
+        component_type = metadata.get("component_type")
+        slot_name = metadata.get("slot")
+        if component_type and slot_name:
+            slot_target = StyleTarget(
+                type_name=str(component_type),
+                id=getattr(primitive, "id", None),
+                class_names=tuple(getattr(primitive, "class_names", ())),
+                slot_name=str(slot_name),
+            )
+            style = resolver.resolve(slot_target, base=style)
+        return style
+
+    def _render_single_primitive(self, slide: object, primitive: object, style: Style) -> object | list[object] | None:
+        box = getattr(primitive, "box", None)
+
+        if isinstance(primitive, Text):
+            if box is None:
+                return None
+            return self.text(
+                slide,
+                box,
+                primitive.text,
+                size=style.font_size,
+                color=style.color or self.theme.colors.text_primary,
+                bold=style.bold,
+                align=style.align or "left",
+                valign=style.valign or "top",
+                font=style.font_family,
+                line_spacing=style.line_spacing,
+                overflow=str(style.extras.get("overflow", "fit")),
+                max_chars=int(style.extras["max_chars"]) if style.extras.get("max_chars") is not None else None,
+            )
+
+        if isinstance(primitive, RichText):
+            if box is None:
+                return None
+            text_value = "".join(run.text for run in primitive.runs)
+            return self.text(
+                slide,
+                box,
+                text_value,
+                size=style.font_size,
+                color=style.color or self.theme.colors.text_primary,
+                bold=style.bold,
+                align=style.align or "left",
+                valign=style.valign or "top",
+                font=style.font_family,
+                line_spacing=style.line_spacing,
+                overflow=str(style.extras.get("overflow", "fit")),
+                max_chars=int(style.extras["max_chars"]) if style.extras.get("max_chars") is not None else None,
+            )
+
+        if isinstance(primitive, Rect):
+            if box is None:
+                return None
+            if style.shadow:
+                self.rect(
+                    slide,
+                    Box(box.x + self.theme.shadow.card_offset_x, box.y + self.theme.shadow.card_offset_y, box.w, box.h),
+                    self.theme.colors.shadow_card,
+                    rounded=style.radius if style.radius is not None else self.theme.radius_tokens.md,
+                    opacity=0.65,
+                )
+            return self.rect(
+                slide,
+                box,
+                style.fill or self.theme.colors.surface_white,
+                line=style.stroke,
+                rounded=style.radius if style.radius is not None else False,
+                line_width=style.stroke_width or 0.55,
+                opacity=style.opacity if style.opacity is not None else 1.0,
+            )
+
+        if isinstance(primitive, Ellipse):
+            if box is None:
+                return None
+            return self.circle(
+                slide,
+                box,
+                style.fill or self.theme.colors.surface_white,
+                line=style.stroke,
+                line_width=style.stroke_width or 0.55,
+                opacity=style.opacity if style.opacity is not None else 1.0,
+            )
+
+        if isinstance(primitive, LinePrimitive):
+            if box is not None and primitive.x1 == primitive.x2 == primitive.y1 == primitive.y2 == 0:
+                return self.line(slide, box.x, box.y + box.h / 2, box.x + box.w, box.y + box.h / 2, color=style.stroke or style.color, width=style.stroke_width or 1.0)
+            return self.line(slide, primitive.x1, primitive.y1, primitive.x2, primitive.y2, color=style.stroke or style.color, width=style.stroke_width or 1.0)
+
+        if isinstance(primitive, ImagePrimitive):
+            if box is None:
+                return None
+            return self.picture(slide, primitive.src, box, fit=primitive.fit)
+
+        if isinstance(primitive, IconPrimitive):
+            if box is None:
+                return None
+            props = primitive.icon_props or {}
+            request = self.icon_registry.create_request(
+                primitive.name,
+                color=style.color or style.stroke or self.theme.colors.primary,
+                size=int(props.get("size", 128)),
+                width=int(props["width"]) if props.get("width") is not None else None,
+                height=int(props["height"]) if props.get("height") is not None else None,
+                rotate=props.get("rotate"),
+                flip=str(props.get("flip", "")),
+                stroke_width=float(props["stroke_width"]) if props.get("stroke_width") is not None else None,
+            )
+            if request is not None:
+                shape = self.icon_picture(slide, request, box, opacity=style.opacity if style.opacity is not None else 1.0)
+                if shape is not None:
+                    return shape
+            return self.text(slide, box, primitive.name[:2].upper(), size=style.font_size or 10, color=style.color or self.theme.colors.primary, bold=True, align="center", valign="middle")
+
+        if isinstance(primitive, TablePrimitive):
+            if box is None:
+                return None
+            self.add_table(slide, box, primitive.headers, primitive.rows)
+            return []
+
+        if isinstance(primitive, ChartPrimitive):
+            if box is None:
+                return None
+            return self._render_chart_primitive(slide, primitive, box, style)
+
+        if isinstance(primitive, Polygon):
+            return self._render_polygon_primitive(slide, primitive, style)
+
+        if isinstance(primitive, PathPrimitive):
+            return None
+
+        return None
+
+    def _render_polygon_primitive(self, slide: object, primitive: Polygon, style: Style) -> list[object]:
+        points = list(primitive.points)
+        if len(points) < 2:
+            return []
+        shapes: list[object] = []
+        for start, end in zip(points, [*points[1:], points[0]]):
+            shape = self.line(slide, start[0], start[1], end[0], end[1], color=style.stroke or style.color, width=style.stroke_width or 1.0)
+            if shape is not None:
+                shapes.append(shape)
+        return shapes
+
+    def _render_chart_primitive(self, slide: object, primitive: ChartPrimitive, box: Box, style: Style) -> object | None:
+        from pptx.chart.data import CategoryChartData
+        from pptx.enum.chart import XL_CHART_TYPE
+
+        chart_type = primitive.chart_type.lower()
+        data = CategoryChartData()
+        palette = [color.lstrip("#") for color in self.theme.chart_palette]
+
+        if chart_type in {"pie", "donut"}:
+            labels = primitive.labels or tuple(f"Item {index + 1}" for index in range(len(primitive.values)))
+            values = primitive.values or (1.0,)
+            data.categories = labels[: len(values)]
+            data.add_series("Share", values)
+            ppt_chart_type = XL_CHART_TYPE.DOUGHNUT if chart_type == "donut" else XL_CHART_TYPE.PIE
+        else:
+            series = primitive.series
+            value_count = max((len(item.values) for item in series), default=0)
+            categories = primitive.categories or tuple(str(index + 1) for index in range(value_count))
+            data.categories = categories
+            for item in series:
+                data.add_series(item.name, item.values)
+            ppt_chart_type = XL_CHART_TYPE.COLUMN_CLUSTERED if chart_type == "bar" else XL_CHART_TYPE.LINE_MARKERS
+
+        chart_shape = slide.shapes.add_chart(ppt_chart_type, Inches(box.x), Inches(box.y), Inches(box.w), Inches(box.h), data)
+        chart = chart_shape.chart
+        chart.has_title = False
+        chart.has_legend = chart_type not in {"pie", "donut"} and len(primitive.series) > 1
+
+        try:
+            if chart_type in {"pie", "donut"}:
+                for index, point in enumerate(chart.series[0].points):
+                    point.format.fill.solid()
+                    point.format.fill.fore_color.rgb = _rgb(palette[index % len(palette)])
+            else:
+                for index, series in enumerate(chart.series):
+                    if chart_type == "line":
+                        series.format.line.color.rgb = _rgb(palette[index % len(palette)])
+                        series.format.line.width = Pt(style.stroke_width or 1.5)
+                    else:
+                        series.format.fill.solid()
+                        series.format.fill.fore_color.rgb = _rgb(palette[index % len(palette)])
+        except (AttributeError, IndexError):
+            pass
+
+        return chart_shape
 
     def rgb(self, value: str) -> RGBColor:
         return _rgb(value)
@@ -277,14 +559,32 @@ class PptxRenderer:
         valign: str = "top",
         font: str | None = None,
         line_spacing: int | None = None,
+        overflow: str = "fit",
+        max_chars: int | None = None,
     ) -> object:
         if not text or box.w <= 0 or box.h <= 0:
             return None
+        overflow_result = apply_text_overflow(text, overflow=overflow, max_chars=max_chars)
+        if overflow_result.truncated:
+            self.diagnostics.append(
+                Diagnostic(
+                    "warning",
+                    "TEXT_TRUNCATED",
+                    "Text was truncated by overflow policy.",
+                    suggestion="Increase the box size, reduce the text length, or use overflow: fit.",
+                )
+            )
         shape = slide.shapes.add_textbox(Inches(box.x), Inches(box.y), Inches(box.w), Inches(box.h))
         frame = shape.text_frame
         frame.clear()
         frame.word_wrap = True
-        frame.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
+        overflow_mode = overflow.lower().strip()
+        frame.auto_size = {
+            "clip": MSO_AUTO_SIZE.NONE,
+            "resize": MSO_AUTO_SIZE.SHAPE_TO_FIT_TEXT,
+            "shape": MSO_AUTO_SIZE.SHAPE_TO_FIT_TEXT,
+            "truncate": MSO_AUTO_SIZE.NONE,
+        }.get(overflow_mode, MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE)
         frame.margin_left = Inches(0)
         frame.margin_right = Inches(0)
         frame.margin_top = Inches(0)
@@ -304,7 +604,7 @@ class PptxRenderer:
             spcPct = ET.SubElement(lnSpc, qn('a:spcPct'))
             spcPct.set('val', str(line_spacing))
         run = p.add_run()
-        run.text = text
+        run.text = overflow_result.text
         latin = font or getattr(self.theme.fonts, "latin_font", "") or self.theme.fonts.family
         ea = self.theme.fonts.family
         run.font.name = latin
@@ -527,15 +827,40 @@ class PptxRenderer:
         title: str,
         description: str,
         output: str,
+        compact: bool = False,
+        output_label: str = "Output",
     ) -> None:
         self.add_card(slide, box, fill=self.theme.colors.surface_white)
-        step_badge = Box(box.x + 0.16, box.y + 0.18, 0.30, 0.30)
+        badge_size = 0.24 if compact else 0.30
+        top = 0.12 if compact else 0.18
+        step_badge = Box(box.x + 0.14, box.y + top, badge_size, badge_size)
         self.circle(slide, step_badge, self.theme.colors.primary_soft, line=self.theme.colors.border_light)
-        self.text(slide, step_badge.inset(0.02, 0.02), f"{index:02d}", size=8, color=self.theme.colors.primary, bold=True, align="center", valign="middle")
-        self.text(slide, Box(box.x + 0.56, box.y + 0.17, box.w - 0.72, 0.24), title, size=self.theme.fonts.body_size, bold=True)
-        self.text(slide, Box(box.x + 0.18, box.y + 0.60, box.w - 0.36, 0.32), description, size=9, color=self.theme.colors.text_secondary)
-        self.rect(slide, Box(box.x + 0.18, box.y + box.h - 0.34, box.w - 0.36, 0.22), self.theme.colors.gray_50, line=self.theme.colors.border_light, rounded=True)
-        self.text(slide, Box(box.x + 0.25, box.y + box.h - 0.31, box.w - 0.50, 0.14), f"Output: {output}", size=8, color=self.theme.colors.primary_dark, bold=True, align="center", valign="middle")
+        self.text(slide, step_badge.inset(0.02, 0.02), f"{index:02d}", size=7 if compact else 8, color=self.theme.colors.primary, bold=True, align="center", valign="middle")
+        self.text(
+            slide,
+            Box(box.x + 0.48, box.y + top - 0.01, box.w - 0.60, 0.20),
+            title,
+            size=self.theme.fonts.caption_size if compact else self.theme.fonts.body_size,
+            bold=True,
+        )
+        desc_y = box.y + (0.46 if compact else 0.60)
+        desc_h = 0.30 if compact else 0.32
+        self.text(slide, Box(box.x + 0.16, desc_y, box.w - 0.32, desc_h), description, size=8 if compact else 9, color=self.theme.colors.text_secondary)
+        if output:
+            output_h = 0.18 if compact else 0.22
+            output_box = Box(box.x + 0.16, box.y + box.h - output_h - 0.12, box.w - 0.32, output_h)
+            self.rect(slide, output_box, self.theme.colors.gray_50, line=self.theme.colors.border_light, rounded=True)
+            label = f"{output_label}: {output}" if output_label else output
+            self.text(
+                slide,
+                output_box.inset(0.06, 0.02),
+                label,
+                size=7 if compact else 8,
+                color=self.theme.colors.primary_dark,
+                bold=True,
+                align="center",
+                valign="middle",
+            )
 
     def add_table(self, slide: object, box: Box, headers: Sequence[str], rows: Sequence[Sequence[str]]) -> None:
         style = self.theme.component_style("table", "comparison")

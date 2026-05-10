@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from ppt_ui.export import ScreenshotExportError, ShowcaseItem, build_demo_showcase, export_pptx_screenshots
+from ppt_ui.export import ScreenshotExportError, ShowcaseItem, export_pptx_review
 from ppt_ui import builtin_theme_names
 from ppt_ui.schema.parser import deck_from_json
 from ppt_ui.schema.parser import deck_from_dict
@@ -44,16 +44,16 @@ def _render_deck_with_theme(source: Path, theme_name: str, output: Path) -> None
 
 
 def _export_assets(output: Path, screenshots_dir: Path, showcase_path: Path, *, showcase_title: str, showcase_subtitle: str) -> None:
-    screenshots = export_pptx_screenshots(output, screenshots_dir)
-    print(f"Generated {len(screenshots)} screenshots in {screenshots_dir}")
-    showcase = build_demo_showcase(
-        screenshots,
+    review = export_pptx_review(
+        output,
+        screenshots_dir,
         showcase_path,
         title=showcase_title,
         subtitle=showcase_subtitle,
         items=SHOWCASE_ITEMS,
     )
-    print(f"Generated showcase image {showcase}")
+    print(f"Generated {len(review.screenshots)} screenshots in {screenshots_dir}")
+    print(f"Generated showcase image {review.showcase}")
 
 
 def _render_theme_demos(source: Path, output_dir: Path, themes: Sequence[str], *, no_screenshots: bool) -> None:

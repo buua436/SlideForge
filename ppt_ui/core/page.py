@@ -5,6 +5,16 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
+def _normalize_class_names(value: object) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        return tuple(item for item in value.replace(",", " ").split() if item)
+    if isinstance(value, list | tuple | set):
+        return tuple(str(item) for item in value if str(item))
+    return (str(value),)
+
+
 @dataclass
 class Block:
     """A component instance placed on a page."""
@@ -15,11 +25,16 @@ class Block:
     layout: dict[str, Any] = field(default_factory=dict)
     style: dict[str, Any] = field(default_factory=dict)
     id: str | None = None
+    class_names: tuple[str, ...] = ()
     visible: bool = True
     metadata: dict[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        self.class_names = _normalize_class_names(self.class_names)
+
     @classmethod
     def from_mapping(cls, data: Mapping[str, Any]) -> "Block":
+        class_value = data.get("class_names", data.get("classes", data.get("class")))
         return cls(
             id=str(data["id"]) if data.get("id") is not None else None,
             type=str(data.get("type", "")),
@@ -27,6 +42,7 @@ class Block:
             props=dict(data.get("props", {})),
             layout=dict(data.get("layout", {})),
             style=dict(data.get("style", {})),
+            class_names=_normalize_class_names(class_value),
             visible=bool(data.get("visible", True)),
             metadata=dict(data.get("metadata", {})),
         )

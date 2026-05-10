@@ -4,6 +4,7 @@ from ppt_ui import Deck, block, chart, data, layout, page
 from ppt_ui.core.diagnostics import DiagnosticError
 from ppt_ui.core.page import Block, Page
 from ppt_ui.schema.parser import block_from_dict, deck_from_dict, deck_from_json
+from ppt_ui.styles import StyleTarget
 
 
 def test_deck_from_dict_builds_pages_and_blocks() -> None:
@@ -136,3 +137,35 @@ def test_validation_warnings_are_kept_on_deck() -> None:
     )
 
     assert any(item.code == "CHART_SERIES_LENGTH_MISMATCH" for item in deck.diagnostics)
+
+
+def test_deck_parser_keeps_styles_and_block_classes() -> None:
+    deck = deck_from_dict(
+        {
+            "schema_version": "0.2",
+            "styles": {
+                ".hero": {"fill": "{colors.primary}"},
+                "#trend": {"stroke_width": 3},
+            },
+            "pages": [
+                {
+                    "type": "page.standard",
+                    "blocks": [
+                        {
+                            "id": "trend",
+                            "class": "hero chart-card",
+                            "type": "chart.line",
+                            "props": {"categories": ["A"], "series": [{"name": "S", "values": [1]}]},
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+
+    block_item = deck.pages[0].blocks[0]
+    style = deck.styles.resolve(StyleTarget(type_name=block_item.type, id=block_item.id, class_names=block_item.class_names))
+
+    assert block_item.class_names == ("hero", "chart-card")
+    assert style.fill == "{colors.primary}"
+    assert style.stroke_width == 3

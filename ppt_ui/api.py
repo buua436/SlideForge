@@ -15,9 +15,27 @@ def _block(
     layout: dict[str, Any] | None = None,
     style: dict[str, Any] | None = None,
     id: str | None = None,
+    class_names: str | list[str] | tuple[str, ...] | None = None,
     visible: bool = True,
 ) -> Block:
-    return Block(type=type_name, variant=variant, props=props or {}, layout=layout or {}, style=style or {}, id=id, visible=visible)
+    return Block(
+        type=type_name,
+        variant=variant,
+        props=props or {},
+        layout=layout or {},
+        style=style or {},
+        id=id,
+        class_names=_normalize_class_names(class_names),
+        visible=visible,
+    )
+
+
+def _normalize_class_names(value: str | list[str] | tuple[str, ...] | None) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        return tuple(item for item in value.replace(",", " ").split() if item)
+    return tuple(str(item) for item in value if str(item))
 
 
 class PageNamespace:
@@ -71,7 +89,7 @@ class PageNamespace:
 
 
 class LayoutNamespace:
-    def grid(self, *, columns: int = 12, rows: int = 6, gap: float = 0.2) -> dict[str, Any]:
+    def page_grid(self, *, columns: int = 12, rows: int = 6, gap: float = 0.2) -> dict[str, Any]:
         return {"type": "layout.grid", "columns": columns, "rows": rows, "gap": gap}
 
     def absolute(self) -> dict[str, Any]:
@@ -82,6 +100,87 @@ class LayoutNamespace:
 
     def box(self, *, x: float, y: float, w: float, h: float) -> dict[str, Any]:
         return {"mode": "absolute", "x": x, "y": y, "w": w, "h": h}
+
+    def container(
+        self,
+        *,
+        children: list[Block],
+        recipe: dict[str, Any] | str | None = None,
+        padding: float | list[float] | dict[str, float] | None = None,
+        gap: float | None = None,
+        layout: dict[str, Any] | None = None,
+        style: dict[str, Any] | None = None,
+        id: str | None = None,
+        class_names: str | list[str] | tuple[str, ...] | None = None,
+    ) -> Block:
+        props: dict[str, Any] = {"children": children}
+        if recipe is not None:
+            props["recipe"] = recipe
+        if padding is not None:
+            props["padding"] = padding
+        if gap is not None:
+            props["gap"] = gap
+        return _block("layout.container", props=props, layout=layout, style=style, id=id, class_names=class_names)
+
+    def card(
+        self,
+        *,
+        children: list[Block],
+        recipe: dict[str, Any] | str | None = None,
+        padding: float | list[float] | dict[str, float] | None = None,
+        gap: float | None = None,
+        layout: dict[str, Any] | None = None,
+        style: dict[str, Any] | None = None,
+        id: str | None = None,
+        class_names: str | list[str] | tuple[str, ...] | None = None,
+    ) -> Block:
+        props: dict[str, Any] = {"children": children}
+        if recipe is not None:
+            props["recipe"] = recipe
+        if padding is not None:
+            props["padding"] = padding
+        if gap is not None:
+            props["gap"] = gap
+        return _block("layout.card", props=props, layout=layout, style=style, id=id, class_names=class_names)
+
+    def stack(
+        self,
+        *,
+        children: list[Block],
+        direction: str = "vertical",
+        gap: float | None = None,
+        padding: float | list[float] | dict[str, float] | None = None,
+        layout: dict[str, Any] | None = None,
+        style: dict[str, Any] | None = None,
+        id: str | None = None,
+        class_names: str | list[str] | tuple[str, ...] | None = None,
+    ) -> Block:
+        props: dict[str, Any] = {"children": children, "direction": direction}
+        if gap is not None:
+            props["gap"] = gap
+        if padding is not None:
+            props["padding"] = padding
+        return _block("layout.stack", props=props, layout=layout, style=style, id=id, class_names=class_names)
+
+    def grid(
+        self,
+        *,
+        children: list[Block],
+        columns: int = 2,
+        rows: int = 1,
+        gap: float | None = None,
+        padding: float | list[float] | dict[str, float] | None = None,
+        layout: dict[str, Any] | None = None,
+        style: dict[str, Any] | None = None,
+        id: str | None = None,
+        class_names: str | list[str] | tuple[str, ...] | None = None,
+    ) -> Block:
+        props: dict[str, Any] = {"children": children, "columns": columns, "rows": rows}
+        if gap is not None:
+            props["gap"] = gap
+        if padding is not None:
+            props["padding"] = padding
+        return _block("layout.grid", props=props, layout=layout, style=style, id=id, class_names=class_names)
 
 
 class BlockNamespace:
@@ -94,9 +193,10 @@ class BlockNamespace:
         layout: dict[str, Any] | None = None,
         style: dict[str, Any] | None = None,
         id: str | None = None,
+        class_names: str | list[str] | tuple[str, ...] | None = None,
         visible: bool = True,
     ) -> Block:
-        return _block(type_name, props=props, variant=variant, layout=layout, style=style, id=id, visible=visible)
+        return _block(type_name, props=props, variant=variant, layout=layout, style=style, id=id, class_names=class_names, visible=visible)
 
 
 class BasicNamespace:
@@ -112,24 +212,91 @@ class BasicNamespace:
         align: str = "left",
         valign: str = "top",
         id: str | None = None,
+        class_names: str | list[str] | tuple[str, ...] | None = None,
     ) -> Block:
         props: dict[str, Any] = {"text": text, "bullets": bullets or [], "bold": bold, "align": align, "valign": valign}
         if size is not None:
             props["size"] = size
         if color is not None:
             props["color"] = color
-        return _block("basic.text", props=props, layout=layout, id=id)
+        return _block("basic.text", props=props, layout=layout, id=id, class_names=class_names)
+
+    def card(
+        self,
+        *,
+        layout: dict[str, Any] | None = None,
+        style: dict[str, Any] | None = None,
+        id: str | None = None,
+        class_names: str | list[str] | tuple[str, ...] | None = None,
+    ) -> Block:
+        return _block("basic.card", props={}, layout=layout, style=style, id=id, class_names=class_names)
+
+    def divider(
+        self,
+        *,
+        layout: dict[str, Any] | None = None,
+        color: str | None = None,
+        width: float | None = None,
+        id: str | None = None,
+        class_names: str | list[str] | tuple[str, ...] | None = None,
+    ) -> Block:
+        props: dict[str, Any] = {}
+        if color is not None:
+            props["stroke"] = color
+        if width is not None:
+            props["stroke_width"] = width
+        return _block("basic.divider", props=props, layout=layout, id=id, class_names=class_names)
 
 
 class DataNamespace:
-    def metric_card(self, *, label: str, value: str, delta: str = "", compare: str = "", note: str = "", icon: str = "") -> dict[str, Any]:
-        return {"label": label, "value": value, "delta": delta, "compare": compare or note, "icon": icon}
+    def metric_card(
+        self,
+        *,
+        label: str,
+        value: str,
+        delta: str = "",
+        compare: str = "",
+        note: str = "",
+        icon: str = "",
+        bare: bool = False,
+        variant: str = "default",
+        layout: dict[str, Any] | None = None,
+        style: dict[str, Any] | None = None,
+        id: str | None = None,
+        class_names: str | list[str] | tuple[str, ...] | None = None,
+    ) -> dict[str, Any] | Block:
+        props = {"label": label, "value": value, "delta": delta, "compare": compare or note, "icon": icon, "variant": variant}
+        if bare:
+            props["bare"] = True
+        if layout is None and id is None and class_names is None and style is None:
+            return props
+        return _block("data.metric_card", props=props, layout=layout, style=style, id=id, class_names=class_names)
 
-    def metric_cards(self, *, cards: list[dict[str, Any]], layout: dict[str, Any] | None = None, id: str | None = None) -> Block:
-        return _block("data.metric_cards", props={"cards": cards}, layout=layout, id=id)
+    def metric_cards(
+        self,
+        *,
+        cards: list[dict[str, Any]],
+        bare: bool = False,
+        variant: str = "default",
+        layout: dict[str, Any] | None = None,
+        style: dict[str, Any] | None = None,
+        id: str | None = None,
+        class_names: str | list[str] | tuple[str, ...] | None = None,
+    ) -> Block:
+        props: dict[str, Any] = {"cards": cards, "variant": variant}
+        if bare:
+            props["bare"] = True
+        return _block("data.metric_cards", props=props, layout=layout, style=style, id=id, class_names=class_names)
 
-    def progress(self, *, items: list[dict[str, Any]], layout: dict[str, Any] | None = None, id: str | None = None) -> Block:
-        return _block("data.progress", props={"items": items}, layout=layout, id=id)
+    def progress(
+        self,
+        *,
+        items: list[dict[str, Any]],
+        layout: dict[str, Any] | None = None,
+        id: str | None = None,
+        class_names: str | list[str] | tuple[str, ...] | None = None,
+    ) -> Block:
+        return _block("data.progress", props={"items": items}, layout=layout, id=id, class_names=class_names)
 
 
 class ChartNamespace:

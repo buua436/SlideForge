@@ -121,9 +121,13 @@ class MetricCardsComponent:
 
     def render(self, ctx: RenderContext, box: Box) -> None:
         count = max(1, len(self.cards))
-        columns = min(count, 4)
-        if box.w < 4.8 and columns > 2:
-            columns = 2
+        columns = int(ctx.style.get("columns", 0) or 0)
+        if columns <= 0:
+            columns = min(count, 4)
+            cell_w = (box.w - ctx.theme.spacing.gutter * (columns - 1)) / max(1, columns)
+            if cell_w < 1.55 and columns > 2:
+                columns = 2
+        columns = max(1, min(columns, count))
         rows_count = max(1, (count + columns - 1) // columns)
         rows = box.split_rows(rows_count, ctx.theme.spacing.gutter)
         cells = [cell for row in rows for cell in row.split_cols(columns, ctx.theme.spacing.gutter)]
@@ -291,6 +295,16 @@ class BarChartComponent:
                 x = plot.x + idx * group_w + (group_w - bar_w * series_count) / 2 + series_idx * bar_w
                 y = plot.y + plot.h - h
                 r.rect(ctx.slide, Box(x, y, bar_w * 0.82, h), color, rounded=True)
+                if ctx.style.get("show_values", False):
+                    label = f"{value:.1f}".rstrip("0").rstrip(".")
+                    r.text(
+                        ctx.slide,
+                        Box(x - 0.12, max(plot.y - 0.02, y - 0.18), bar_w * 0.82 + 0.24, 0.14),
+                        label,
+                        size=max(6, caption_size - 1),
+                        color=ctx.theme.colors.text_secondary,
+                        align="center",
+                    )
         for idx, label in enumerate(self.categories):
             x = plot.x + idx * group_w + group_w / 2
             r.text(ctx.slide, Box(x - 0.28, plot.y + plot.h + 0.12, 0.56, 0.12), label, size=caption_size, color=ctx.theme.colors.text_secondary, align="center")
@@ -376,6 +390,175 @@ class ProgressBarsComponent:
 
 
 @dataclass
+class ModelDiagramComponent:
+    kind: str = "generic"
+    title: str = ""
+    labels: dict[str, Any] = field(default_factory=dict)
+
+    def render(self, ctx: RenderContext, box: Box) -> None:
+        kind = self.kind.lower().replace("-", "_")
+        if kind in {"fbm", "fbm_net", "bias_mitigation"}:
+            self._render_fbm(ctx, box)
+        elif kind in {"protogate", "proto_gate", "multimodal_gate"}:
+            self._render_protogate(ctx, box)
+        else:
+            self._render_generic(ctx, box)
+
+    def _label(self, key: str, default: str) -> str:
+        value = self.labels.get(key, default)
+        return str(value)
+
+    def _list(self, key: str, default: list[str]) -> list[str]:
+        value = self.labels.get(key, default)
+        if not isinstance(value, list):
+            return default
+        return [str(item) for item in value]
+
+    def _node(self, ctx: RenderContext, box: Box, title: str, note: str = "", *, fill: str | None = None, accent: bool = False) -> None:
+        r = ctx.renderer
+        fill_color = fill or (ctx.theme.colors.primary_soft if accent else ctx.theme.colors.surface_white)
+        r.add_card(ctx.slide, box, fill=fill_color, line=ctx.theme.colors.border_light, shadow=False)
+        if box.h < 0.32:
+            r.text(ctx.slide, box.inset(0.06, 0.02), title, size=max(7, ctx.theme.fonts.caption_size - 1), color=ctx.theme.colors.text_primary, bold=True, align="center", valign="middle")
+            return
+        r.text(ctx.slide, Box(box.x + 0.12, box.y + 0.12, box.w - 0.24, 0.18), title, size=ctx.theme.fonts.caption_size, color=ctx.theme.colors.text_primary, bold=True)
+        if note:
+            r.text(ctx.slide, Box(box.x + 0.12, box.y + 0.40, box.w - 0.24, max(0.10, box.h - 0.50)), note, size=8, color=ctx.theme.colors.text_secondary)
+
+    def _arrow(self, ctx: RenderContext, x1: float, y1: float, x2: float, y2: float, *, color: str | None = None) -> None:
+        r = ctx.renderer
+        line_color = color or ctx.theme.colors.primary
+        r.line(ctx.slide, x1, y1, x2, y2, line_color, width=0.8)
+        r.text(ctx.slide, Box(x2 - 0.06, y2 - 0.08, 0.12, 0.16), ">", size=8, color=line_color, bold=True, align="center", valign="middle")
+
+    def _header(self, ctx: RenderContext, inner: Box) -> float:
+        if not self.title:
+            return inner.y
+        ctx.renderer.text(ctx.slide, Box(inner.x, inner.y, inner.w, 0.22), self.title, size=ctx.theme.fonts.body_size, color=ctx.theme.colors.text_primary, bold=True)
+        return inner.y + 0.34
+
+    def _render_fbm(self, ctx: RenderContext, box: Box) -> None:
+        r = ctx.renderer
+        r.add_card(ctx.slide, box, fill=_style(ctx, "fill", ctx.theme.colors.surface_white), line=_style(ctx, "border", ctx.theme.colors.border_light))
+        inner = box.inset(0.26, 0.22)
+        y = self._header(ctx, inner)
+        note = self._label("note", "")
+        note_space = 0.44 if note else 0.04
+        diagram_bottom = inner.y + inner.h - note_space
+        diagram_h = max(1.20, diagram_bottom - y)
+        sources = self._list("sources", ["Source A", "Source B", "Source C"])
+
+        source_area = Box(inner.x, y + 0.08, 1.58, max(0.78, diagram_h - 0.16))
+        source_rows = source_area.split_rows(len(sources), 0.08)
+        for row, source in zip(source_rows, sources):
+            self._node(ctx, row, source, "", fill=ctx.theme.colors.gray_50)
+
+        node_h = min(0.72, max(0.56, diagram_h * 0.46))
+        mid_y = y + diagram_h / 2
+        main_y = mid_y - node_h / 2
+        top_y = max(y + 0.04, mid_y - node_h - 0.12)
+        bottom_y = min(diagram_bottom - node_h - 0.02, mid_y + 0.12)
+        output_x = inner.x + 9.18
+
+        backbone = Box(inner.x + 2.05, main_y, 1.88, node_h)
+        feature = Box(inner.x + 4.42, main_y, 1.78, node_h)
+        disease = Box(inner.x + 6.70, top_y, 1.95, node_h)
+        bias = Box(inner.x + 6.70, bottom_y, 1.95, node_h)
+        output = Box(output_x, main_y, max(1.40, inner.x + inner.w - output_x), node_h)
+
+        self._node(ctx, backbone, self._label("backbone", "Shared backbone"), self._label("backbone_note", "Feature extractor"), accent=True)
+        self._node(ctx, feature, self._label("feature", "Fused feature"), self._label("feature_note", "Source-invariant representation"))
+        self._node(ctx, disease, self._label("disease_head", "Disease head"), self._label("disease_note", "Classification loss"))
+        self._node(ctx, bias, self._label("bias_head", "Bias mitigation"), self._label("bias_note", "Source bias constraint"), fill=ctx.theme.colors.accent_soft)
+        self._node(ctx, output, self._label("output", "Diagnosis"), self._label("output_note", "Robust prediction"), accent=True)
+
+        mid_y = backbone.y + backbone.h / 2
+        self._arrow(ctx, source_area.x + source_area.w + 0.12, mid_y, backbone.x - 0.10, mid_y)
+        self._arrow(ctx, backbone.x + backbone.w + 0.10, mid_y, feature.x - 0.10, mid_y)
+        self._arrow(ctx, feature.x + feature.w + 0.10, mid_y, disease.x - 0.10, disease.y + disease.h / 2)
+        self._arrow(ctx, feature.x + feature.w + 0.10, mid_y, bias.x - 0.10, bias.y + bias.h / 2, color=ctx.theme.colors.accent)
+        self._arrow(ctx, disease.x + disease.w + 0.12, disease.y + disease.h / 2, output.x - 0.10, output.y + output.h / 2)
+
+        if note:
+            note_box = Box(inner.x, inner.y + inner.h - 0.30, inner.w, 0.24)
+            r.rect(ctx.slide, note_box, ctx.theme.colors.primary_soft, line=ctx.theme.colors.border_light, rounded=True)
+            r.text(ctx.slide, note_box.inset(0.12, 0.04), note, size=ctx.theme.fonts.caption_size, color=ctx.theme.colors.primary_dark, bold=True, align="center", valign="middle")
+
+    def _render_protogate(self, ctx: RenderContext, box: Box) -> None:
+        r = ctx.renderer
+        r.add_card(ctx.slide, box, fill=_style(ctx, "fill", ctx.theme.colors.surface_white), line=_style(ctx, "border", ctx.theme.colors.border_light))
+        inner = box.inset(0.26, 0.22)
+        y = self._header(ctx, inner)
+        modalities = self._list("modalities", ["CFP", "OCT", "OCTA"])
+        note = self._label("note", "")
+        note_space = 0.44 if note else 0.04
+        diagram_bottom = inner.y + inner.h - note_space
+        diagram_h = max(1.35, diagram_bottom - y)
+        node_h = min(0.70, max(0.54, diagram_h * 0.38))
+        lane_gap = max(0.12, min(0.30, diagram_h - node_h * 2))
+        top_y = y + 0.04
+        bottom_y = min(diagram_bottom - node_h - 0.02, top_y + node_h + lane_gap)
+        mid_y = top_y + (bottom_y - top_y) / 2
+        classifier_x = inner.x + 10.05
+        stack_h = min(0.96, max(0.66, diagram_bottom - bottom_y - 0.02))
+
+        prompt = Box(inner.x, top_y, 1.55, node_h)
+        text_encoder = Box(inner.x + 2.05, top_y, 1.55, node_h)
+        prototypes = Box(inner.x + 4.10, top_y, 1.78, node_h)
+        modality_stack = Box(inner.x, bottom_y, 1.55, stack_h)
+        visual_encoder = Box(inner.x + 2.05, bottom_y, 1.55, node_h)
+        projection = Box(inner.x + 4.10, bottom_y, 1.78, node_h)
+        gate = Box(inner.x + 6.38, mid_y, 1.45, node_h)
+        fusion = Box(inner.x + 8.25, mid_y, 1.42, node_h)
+        classifier = Box(classifier_x, mid_y, max(1.20, inner.x + inner.w - classifier_x), node_h)
+
+        self._node(ctx, prompt, self._label("prompt", "Text prompts"), self._label("prompt_note", "Disease semantics"))
+        self._node(ctx, text_encoder, self._label("text_encoder", "Text encoder"), self._label("text_note", "Semantic vectors"), accent=True)
+        self._node(ctx, prototypes, self._label("prototype", "Prototype bank"), self._label("prototype_note", "Class anchors"), fill=ctx.theme.colors.accent_soft)
+        rows = modality_stack.split_rows(len(modalities), 0.06)
+        for row, modality in zip(rows, modalities):
+            self._node(ctx, row, modality, "", fill=ctx.theme.colors.gray_50)
+        self._node(ctx, visual_encoder, self._label("visual_encoder", "Modality encoders"), self._label("visual_note", "Visual features"), accent=True)
+        self._node(ctx, projection, self._label("projection", "Semantic alignment"), self._label("projection_note", "Shared space"))
+        self._node(ctx, gate, self._label("gate", "Gate network"), self._label("gate_note", "Adaptive weights"), fill=ctx.theme.colors.accent_soft)
+        self._node(ctx, fusion, self._label("fusion", "Weighted fusion"), self._label("fusion_note", "Evidence aggregation"))
+        self._node(ctx, classifier, self._label("classifier", "Diagnosis"), self._label("classifier_note", "Known / unknown inference"), accent=True)
+
+        self._arrow(ctx, prompt.x + prompt.w + 0.10, prompt.y + prompt.h / 2, text_encoder.x - 0.10, text_encoder.y + text_encoder.h / 2)
+        self._arrow(ctx, text_encoder.x + text_encoder.w + 0.10, text_encoder.y + text_encoder.h / 2, prototypes.x - 0.10, prototypes.y + prototypes.h / 2)
+        self._arrow(ctx, modality_stack.x + modality_stack.w + 0.10, visual_encoder.y + visual_encoder.h / 2, visual_encoder.x - 0.10, visual_encoder.y + visual_encoder.h / 2)
+        self._arrow(ctx, visual_encoder.x + visual_encoder.w + 0.10, visual_encoder.y + visual_encoder.h / 2, projection.x - 0.10, projection.y + projection.h / 2)
+        self._arrow(ctx, prototypes.x + prototypes.w + 0.10, prototypes.y + prototypes.h / 2, gate.x - 0.10, gate.y + gate.h / 2, color=ctx.theme.colors.accent)
+        self._arrow(ctx, projection.x + projection.w + 0.10, projection.y + projection.h / 2, gate.x - 0.10, gate.y + gate.h / 2)
+        self._arrow(ctx, gate.x + gate.w + 0.10, gate.y + gate.h / 2, fusion.x - 0.10, fusion.y + fusion.h / 2)
+        self._arrow(ctx, fusion.x + fusion.w + 0.10, fusion.y + fusion.h / 2, classifier.x - 0.10, classifier.y + classifier.h / 2)
+
+        if note:
+            note_box = Box(inner.x, inner.y + inner.h - 0.30, inner.w, 0.24)
+            r.rect(ctx.slide, note_box, ctx.theme.colors.primary_soft, line=ctx.theme.colors.border_light, rounded=True)
+            r.text(ctx.slide, note_box.inset(0.12, 0.04), note, size=ctx.theme.fonts.caption_size, color=ctx.theme.colors.primary_dark, bold=True, align="center", valign="middle")
+
+    def _render_generic(self, ctx: RenderContext, box: Box) -> None:
+        r = ctx.renderer
+        r.add_card(ctx.slide, box, fill=_style(ctx, "fill", ctx.theme.colors.surface_white), line=_style(ctx, "border", ctx.theme.colors.border_light))
+        stages = self._list("stages", ["Input", "Encoder", "Fusion", "Prediction"])
+        inner = box.inset(0.26, 0.24)
+        y = self._header(ctx, inner)
+        cells = Box(inner.x, y + 0.15, inner.w, max(0.60, inner.y + inner.h - y - 0.25)).split_cols(len(stages), 0.18)
+        for idx, (cell, stage) in enumerate(zip(cells, stages)):
+            self._node(ctx, cell, stage, "", accent=idx in {0, len(stages) - 1})
+            if idx < len(cells) - 1:
+                self._arrow(ctx, cell.x + cell.w + 0.04, cell.y + cell.h / 2, cells[idx + 1].x - 0.06, cell.y + cell.h / 2)
+
+    @classmethod
+    def from_props(cls, props: Mapping[str, Any]) -> "ModelDiagramComponent":
+        labels = dict(props)
+        kind = str(labels.pop("kind", labels.pop("variant", "generic")))
+        title = str(labels.pop("title", ""))
+        return cls(kind=kind, title=title, labels=labels)
+
+
+@dataclass
 class ProcessFlowComponent:
     steps: list[dict[str, Any]] = field(default_factory=list)
 
@@ -385,10 +568,13 @@ class ProcessFlowComponent:
             return
         r = ctx.renderer
         r.add_card(ctx.slide, box, fill=_style(ctx, "fill", ctx.theme.colors.surface_white), line=_style(ctx, "border", ctx.theme.colors.border_light))
-        inner = box.inset(0.22, 0.34, 0.22, 0.28)
-        cells = inner.split_cols(len(steps), 0.16)
+        compact = bool(ctx.style.get("compact", box.h < 1.85))
+        inner = box.inset(0.22, 0.24 if compact else 0.34, 0.22, 0.22 if compact else 0.28)
+        cells = inner.split_cols(len(steps), _style_num(ctx, "gap", 0.16))
+        max_card_h = _style_num(ctx, "card_height", 1.22 if compact else 1.55)
+        output_label = str(ctx.style.get("output_label", "Output"))
         for idx, (cell, step) in enumerate(zip(cells, steps), start=1):
-            card_h = min(cell.h, 1.55)
+            card_h = min(cell.h, max_card_h)
             card_y = cell.y + max(0, (cell.h - card_h) / 2)
             step_box = Box(cell.x, card_y, cell.w, card_h)
             r.add_process_step_card(
@@ -398,6 +584,8 @@ class ProcessFlowComponent:
                 title=str(step.get("title", step.get("label", ""))),
                 description=str(step.get("description", "")),
                 output=str(step.get("output", "")),
+                compact=compact,
+                output_label=output_label,
             )
             if idx < len(cells):
                 x = cell.x + cell.w + 0.03
